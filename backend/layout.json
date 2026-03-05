@@ -1,0 +1,20 @@
+{
+  "placements": [
+    {
+      "component": "component_0",
+      "centroid": [
+        8.05,
+        -12.04,
+        0
+      ]
+    },
+    {
+      "component": "component_1",
+      "centroid": [
+        -0.17,
+        -0.76,
+        0
+      ]
+    }
+  ]
+}
