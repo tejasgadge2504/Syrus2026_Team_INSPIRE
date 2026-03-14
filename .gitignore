@@ -6,6 +6,8 @@ backend/__pycache__/
 backend/*.pyc
 backend/*.pyo
 backend/.env
+backend/.venv
+
 
 # Node/Vite project (jwellery/jewelry-3d)
 jwellery/jewelry-3d/node_modules/
