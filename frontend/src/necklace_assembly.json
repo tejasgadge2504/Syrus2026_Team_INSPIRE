@@ -1,0 +1,24 @@
+{
+  "metadata": { "name": "Full Necklace Set", "assets": ["Dynamic_3D_Component.glb", "Pendant_Component.glb"] },
+  "layout": [
+    {
+      "assetId": "Pendant_Component",
+      "instances": [
+        { "id": "main_pendant", "position": [0, -1.5, 0], "rotation": [0, 0, 0], "scale": 1.5 },
+        { "id": "earring_right", "position": [1.2, -2.5, 0], "rotation": [0, 0, 0], "scale": 0.8 }
+      ]
+    },
+    {
+      "assetId": "Dynamic_3D_Component",
+      "instances": [
+        { "position": [0, 0, 0], "rotation": [0, 0, 0], "scale": 0.5 },
+        { "position": [0.4, 0.1, 0], "rotation": [0, 0, -0.2], "scale": 0.5 },
+        { "position": [-0.4, 0.1, 0], "rotation": [0, 0, 0.2], "scale": 0.5 },
+        { "position": [0.8, 0.3, 0], "rotation": [0, 0, -0.5], "scale": 0.5 },
+        { "position": [-0.8, 0.3, 0], "rotation": [0, 0, 0.5], "scale": 0.5 },
+        { "position": [1.2, 0.7, 0], "rotation": [0, 0, -0.8], "scale": 0.5 },
+        { "position": [-1.2, 0.7, 0], "rotation": [0, 0, 0.8], "scale": 0.5 }
+      ]
+    }
+  ]
+}
