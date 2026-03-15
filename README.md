@@ -5,7 +5,7 @@
 
 **Team:** Team INSPIRE
 
-**PPT:** [Link](https://www.canva.com/design/DAGO9vS1p1s/_MVXKSpuWTQPOvgUbz-e-Q/edit?utm_content=DAGO9vS1p1s&utm_campaign=designshare&utm_medium=link2&utm_source=sharebutton)
+**PPT:** [Link](https://www.canva.com/design/DAHD5Wp_J6o/sm5t_jBFwx8GN67qF1SlDA/edit?utm_content=DAHD5Wp_J6o&utm_campaign=designshare&utm_medium=link2&utm_source=sharebutton)
 
 **Youtube Video:** [Link](https://youtu.be/88za8LZrxN0)
 
