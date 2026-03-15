@@ -4,7 +4,9 @@
 
 ---
 # GeminAI – Dil se Design Tak
----
+<p align="center">
+  <img src="readme/GeminAI_logo.png" alt="Demo" width="600" />
+</p>
 
 ## Overview
 
