@@ -1,7 +1,6 @@
 from flask import Flask, request, jsonify
 from PIL import Image
 from google import genai
-import io
 import json
 import re
 
@@ -12,82 +11,138 @@ app = Flask(__name__)
 # -------------------------
 
 GEMINI_API_KEY = "AIzaSyBUtxPDM_BTSYW0eRZpGtVDOmfXS5vMOUM"
-
 client = genai.Client(api_key=GEMINI_API_KEY)
 
 
 # -------------------------
-# PROMPT
+# STRICT PROMPT FOR YOUR RENDERER
 # -------------------------
 
 PROMPT = """
-You are an expert jewelry CAD analyzer.
+You are an expert AI Jewelry Analyzer.
 
-Analyze the jewelry image and extract all DISTINCT components.
+Analyze the jewelry image and convert it into a structured JSON
+that will be used directly by a 3D renderer.
 
-For each component produce detailed JSON describing how it should
-be reconstructed in 3D.
+You MUST follow this JSON schema EXACTLY.
+
+Rules:
+
+1. Use render_type = "geometry" for simple metal structures like rings, chains, rods.
+2. Use render_type = "model" for complex gemstones like diamonds, pearls, rubies.
+3. Positions should be normalized values.
+4. Use torus geometry for rings.
+5. Diamonds should attach to ring using placement rules.
 
 Return ONLY JSON.
 
-For every component include:
-
-component_id
-component_name
-component_type
-shape
-
-detailed_description:
-Explain how this component should appear in 3D including curvature,
-edges, symmetry, corners, and surface properties.
-
-color
-material
-
-position:
-x
-y
-z
-
-depth_or_height
-
-size_parameters:
-radius
-width
-length
-thickness
-
-surface_type:
-smooth / faceted / engraved
-
-Example format:
+JSON SCHEMA:
 
 {
- "jewelry_type": "ring",
- "components":[
-  {
-   "component_id":"band_1",
-   "component_name":"ring_band",
-   "component_type":"structure",
-   "shape":"torus",
-   "color":"gold",
-   "material":"gold",
-   "detailed_description":"Smooth circular band with rounded edges and uniform thickness",
-   "position":{"x":0,"y":0,"z":0},
-   "depth_or_height":2.2,
-   "size_parameters":{
-        "radius":9,
-        "thickness":2
-   },
-   "surface_type":"smooth"
-  }
- ]
+  "scene": {
+    "jewelry_type": "ring | necklace | earring | bracelet",
+    "units": "normalized",
+    "version": "1.0"
+  },
+
+  "components": [
+    {
+      "id": "component_id",
+      "name": "component_name",
+      "render_type": "geometry | model",
+
+      "geometry": {
+        "type": "torus | sphere | cylinder",
+        "radius": number,
+        "tube": number,
+        "radialSegments": number,
+        "tubularSegments": number
+      },
+
+      "transform": {
+        "position": [x, y, z],
+        "rotation": [x, y, z],
+        "scale": number
+      },
+
+      "placement": {
+        "attach_to": "component_id",
+        "mount_point": "top | center | bottom",
+        "overlap_depth": number,
+        "offset": [x,y,z]
+      },
+
+      "materialOverrides": {
+        "metal": "gold | silver | platinum",
+        "gem_type": "diamond | ruby | emerald",
+        "color": "hex_color"
+      }
+    }
+  ]
+}
+
+Example Output:
+
+{
+  "scene": {
+    "jewelry_type": "ring",
+    "units": "normalized",
+    "version": "1.0"
+  },
+
+  "components": [
+    {
+      "id": "ring_band_01",
+      "name": "ring_band",
+      "render_type": "geometry",
+
+      "geometry": {
+        "type": "torus",
+        "radius": 1.3,
+        "tube": 0.12,
+        "radialSegments": 16,
+        "tubularSegments": 100
+      },
+
+      "transform": {
+        "position": [0, -1.3, 0],
+        "rotation": [0, 0, 0],
+        "scale": 1
+      },
+
+      "materialOverrides": {
+        "metal": "gold"
+      }
+    },
+
+    {
+      "id": "diamond_01",
+      "name": "diamond",
+      "render_type": "model",
+
+      "placement": {
+        "attach_to": "ring_band_01",
+        "mount_point": "top",
+        "overlap_depth": 0.25,
+        "offset": [0,0,0]
+      },
+
+      "transform": {
+        "scale": 0.6,
+        "rotation": [0,0,0]
+      },
+
+      "materialOverrides": {
+        "gem_type": "diamond",
+        "color": "#ffffff"
+      }
+    }
+  ]
 }
 
 Important:
-- Estimate realistic 3D depth from jewelry design knowledge.
-- Detect gemstones, prongs, band, decorative elements.
-- Coordinates should assume a normalized 3D space.
+Return ONLY valid JSON.
+Do not include explanations.
 """
 
 
@@ -104,12 +159,16 @@ def analyze_image(image):
 
     text = response.text
 
+    # Extract JSON safely
     json_match = re.search(r"\{.*\}", text, re.S)
 
     if json_match:
-        return json.loads(json_match.group())
+        try:
+            return json.loads(json_match.group())
+        except json.JSONDecodeError:
+            return {"error": "Invalid JSON from model"}
 
-    return {"error": "Could not parse JSON from model output"}
+    return {"error": "Could not parse JSON", "raw_output": text}
 
 
 # -------------------------
@@ -123,7 +182,6 @@ def detect_components():
         return jsonify({"error": "No image uploaded"}), 400
 
     file = request.files["image"]
-
     image = Image.open(file.stream)
 
     result = analyze_image(image)
