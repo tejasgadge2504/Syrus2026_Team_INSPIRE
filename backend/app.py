@@ -1,8 +1,10 @@
 from flask import Flask, request, jsonify
 from PIL import Image
 from google import genai
+from google.genai import types
 import json
 import re
+import io
 
 app = Flask(__name__)
 
@@ -10,12 +12,12 @@ app = Flask(__name__)
 # GEMINI CONFIG
 # -------------------------
 
-GEMINI_API_KEY = "AIzaSyBUtxPDM_BTSYW0eRZpGtVDOmfXS5vMOUM"
+GEMINI_API_KEY = "AIzaSyDb0KT1JK8CfoaYIcqtdDvNog7BGBsJRYo"
+
 client = genai.Client(api_key=GEMINI_API_KEY)
 
-
 # -------------------------
-# STRICT PROMPT FOR YOUR RENDERER
+# STRICT PROMPT
 # -------------------------
 
 PROMPT = """
@@ -24,125 +26,49 @@ You are an expert AI Jewelry Analyzer.
 Analyze the jewelry image and convert it into a structured JSON
 that will be used directly by a 3D renderer.
 
-You MUST follow this JSON schema EXACTLY.
-
 Rules:
 
-1. Use render_type = "geometry" for simple metal structures like rings, chains, rods.
-2. Use render_type = "model" for complex gemstones like diamonds, pearls, rubies.
-3. Positions should be normalized values.
-4. Use torus geometry for rings.
-5. Diamonds should attach to ring using placement rules.
+1. Use render_type = "geometry" for simple metal structures
+2. Use render_type = "model" for complex gemstones
+3. Positions should be normalized values
+4. Rings use torus geometry
 
 Return ONLY JSON.
 
-JSON SCHEMA:
+Schema:
 
 {
-  "scene": {
-    "jewelry_type": "ring | necklace | earring | bracelet",
-    "units": "normalized",
-    "version": "1.0"
-  },
-
-  "components": [
+  scene: { jewelry_type: "ring", units: "normalized", version: "1.0" },
+  components: [
     {
-      "id": "component_id",
-      "name": "component_name",
-      "render_type": "geometry | model",
-
-      "geometry": {
-        "type": "torus | sphere | cylinder",
-        "radius": number,
-        "tube": number,
-        "radialSegments": number,
-        "tubularSegments": number
-      },
-
-      "transform": {
-        "position": [x, y, z],
-        "rotation": [x, y, z],
-        "scale": number
-      },
-
-      "placement": {
-        "attach_to": "component_id",
-        "mount_point": "top | center | bottom",
-        "overlap_depth": number,
-        "offset": [x,y,z]
-      },
-
-      "materialOverrides": {
-        "metal": "gold | silver | platinum",
-        "gem_type": "diamond | ruby | emerald",
-        "color": "hex_color"
-      }
-    }
-  ]
-}
-
-Example Output:
-
-{
-  "scene": {
-    "jewelry_type": "ring",
-    "units": "normalized",
-    "version": "1.0"
-  },
-
-  "components": [
-    {
-      "id": "ring_band_01",
-      "name": "ring_band",
-      "render_type": "geometry",
-
-      "geometry": {
-        "type": "torus",
-        "radius": 1.3,
-        "tube": 0.12,
-        "radialSegments": 16,
-        "tubularSegments": 100
-      },
-
-      "transform": {
-        "position": [0, -1.3, 0],
-        "rotation": [0, 0, 0],
-        "scale": 1
-      },
-
-      "materialOverrides": {
-        "metal": "gold"
-      }
+      id: "ring_band_01",
+      name: "ring_band",
+      render_type: "geometry",
+      geometry: { type: "torus", radius: 1.3, tube: 0.12, radialSegments: 24, tubularSegments: 64 },
+      materialOverrides: { metal: "silver", color: "#c0c0c0" },
+      transform: { position: [0, -1.3, 0], rotation: [0, 0, 0], scale: 1 },
     },
-
     {
-      "id": "diamond_01",
-      "name": "diamond",
-      "render_type": "model",
+      id: "diamond_01",
+      name: "diamond",
+      render_type: "model",
+      placement: { attach_to: "ring_band_01", mount_point: "top", offset: [0, 0, 0], overlap_depth: 0 },
+      materialOverrides: { color: "#b52f2f", gem_type: "diamond" },
+      transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 0.6 },
+    },
+    {
+      id: "prong_01",
+      name: "prong",
+      render_type: "geometry",
+      geometry: { type: "cylinder", radius: 0.04, height: 0.5, radialSegments: 8, heightSegments: 1 },
+      placement: { attach_to: "ring_band_01", mount_point: "top", offset: [0.45, 0.5, 0], overlap_depth: 0.05 },
+      materialOverrides: { metal: "silver", color: "#c0c0c0" },
+      transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 },
+    },
+  ],
+};
 
-      "placement": {
-        "attach_to": "ring_band_01",
-        "mount_point": "top",
-        "overlap_depth": 0.25,
-        "offset": [0,0,0]
-      },
 
-      "transform": {
-        "scale": 0.6,
-        "rotation": [0,0,0]
-      },
-
-      "materialOverrides": {
-        "gem_type": "diamond",
-        "color": "#ffffff"
-      }
-    }
-  ]
-}
-
-Important:
-Return ONLY valid JSON.
-Do not include explanations.
 """
 
 
@@ -152,23 +78,34 @@ Do not include explanations.
 
 def analyze_image(image):
 
+    # convert PIL image to bytes
+    img_bytes = io.BytesIO()
+    image.save(img_bytes, format="PNG")
+    img_bytes = img_bytes.getvalue()
+
     response = client.models.generate_content(
         model="gemini-2.5-flash",
-        contents=[PROMPT, image]
+        contents=[
+            PROMPT,
+            types.Part.from_bytes(
+                data=img_bytes,
+                mime_type="image/png"
+            )
+        ]
     )
 
     text = response.text
 
-    # Extract JSON safely
+    # extract JSON safely
     json_match = re.search(r"\{.*\}", text, re.S)
 
     if json_match:
         try:
             return json.loads(json_match.group())
         except json.JSONDecodeError:
-            return {"error": "Invalid JSON from model"}
+            return {"error": "Invalid JSON returned", "raw": text}
 
-    return {"error": "Could not parse JSON", "raw_output": text}
+    return {"error": "Could not parse JSON", "raw": text}
 
 
 # -------------------------
@@ -182,7 +119,11 @@ def detect_components():
         return jsonify({"error": "No image uploaded"}), 400
 
     file = request.files["image"]
-    image = Image.open(file.stream)
+
+    try:
+        image = Image.open(file.stream).convert("RGB")
+    except:
+        return jsonify({"error": "Invalid image"}), 400
 
     result = analyze_image(image)
 

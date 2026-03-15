@@ -3,89 +3,119 @@ import DynamicModel from "./DynamicModel";
 import ProceduralGeometry from "./ProceduralGeometry";
 import { MODEL_DATABASE } from "./modelDatabase";
 
-export default function SceneRenderer({ components }) {
+// Resolve base anchor positions for placement system
+function resolvePositions(components) {
+  const anchorMap = {}; // id -> anchor [x,y,z] (placement math only, no user offset)
 
-  const componentMap = {};
-  const rendered = [];
+  components.forEach((comp) => {
+    if (!comp.placement) {
+      // Standalone: anchor is just the json transform.position
+      anchorMap[comp.id] = [...(comp.transform?.position || [0, 0, 0])];
+    } else {
+      const parent = anchorMap[comp.placement.attach_to] || [0, 0, 0];
+      let base = [...parent];
 
-  components.forEach((component) => {
+      if (comp.placement.mount_point === "top") {
+        base[1] = base[1] + 1;
+      }
 
-    let position = component.transform?.position || [0,0,0];
+      const overlap = comp.placement.overlap_depth || 0;
+      const offset = comp.placement.offset || [0, 0, 0];
 
-    // -------- ATTACHMENT LOGIC --------
-    if(component.placement){
+      anchorMap[comp.id] = [
+        base[0] + offset[0],
+        base[1] - overlap + offset[1],
+        base[2] + offset[2],
+      ];
+    }
+  });
 
-      const parent = componentMap[component.placement.attach_to];
+  return anchorMap;
+}
 
-      if(parent){
+export default function SceneRenderer({ components, setSelectedId, selectedId }) {
+  const anchorMap = resolvePositions(components);
 
-        let basePos = parent.position;
+  return (
+    <>
+      {components.map((component) => {
+        // User-controlled offset from sliders (always a clean [x,y,z])
+        const userOffset = [
+          component.transform?.position?.[0] ?? 0,
+          component.transform?.position?.[1] ?? 0,
+          component.transform?.position?.[2] ?? 0,
+        ];
 
-        if(component.placement.mount_point === "top"){
-          basePos = [
-            basePos[0],
-            basePos[1] + 1,
-            basePos[2]
+        let finalPosition;
+
+        if (component.placement) {
+          // Placement components: anchor + user offset
+          const anchor = anchorMap[component.id] || [0, 0, 0];
+          finalPosition = [
+            anchor[0] + userOffset[0],
+            anchor[1] + userOffset[1],
+            anchor[2] + userOffset[2],
+          ];
+        } else {
+          // Standalone components: position IS the transform.position (set in JSON)
+          // User offset acts as delta on top
+          const base = anchorMap[component.id] || [0, 0, 0];
+          finalPosition = [
+            base[0],
+            base[1],
+            base[2],
           ];
         }
 
-        const overlap = component.placement.overlap_depth || 0;
-
-        const offset = component.placement.offset || [0,0,0];
-
-        position = [
-          basePos[0] + offset[0],
-          basePos[1] - overlap + offset[1],
-          basePos[2] + offset[2]
+        const rotation = [
+          component.transform?.rotation?.[0] ?? 0,
+          component.transform?.rotation?.[1] ?? 0,
+          component.transform?.rotation?.[2] ?? 0,
         ];
-      }
-    }
+        const scale = component.transform?.scale ?? 1;
+        const isSelected = selectedId === component.id;
 
-    // store computed transform
-    componentMap[component.id] = {
-      position
-    };
+        const handleClick = (e) => {
+          e.stopPropagation();
+          setSelectedId(component.id);
+        };
 
-    // ---------- GEOMETRY ----------
-    if(component.render_type === "geometry"){
+        if (component.render_type === "geometry") {
+          return (
+            <group key={component.id} onClick={handleClick}>
+              <ProceduralGeometry
+                geometry={component.geometry}
+                position={finalPosition}
+                rotation={rotation}
+                scale={scale}
+                materialOverrides={component.materialOverrides}
+                isSelected={isSelected}
+              />
+            </group>
+          );
+        }
 
-      rendered.push(
-        <ProceduralGeometry
-          key={component.id}
-          geometry={component.geometry}
-          position={position}
-          rotation={component.transform?.rotation}
-          scale={component.transform?.scale}
-          materialOverrides={component.materialOverrides}
-        />
-      );
+        if (component.render_type === "model") {
+          const modelInfo = MODEL_DATABASE[component.name];
+          if (!modelInfo) return null;
 
-      return;
-    }
+          return (
+            <group key={component.id} onClick={handleClick}>
+              <DynamicModel
+                path={modelInfo.path}
+                isGem={modelInfo.isGem}
+                position={finalPosition}
+                rotation={rotation}
+                scale={scale}
+                materialOverrides={component.materialOverrides}
+                isSelected={isSelected}
+              />
+            </group>
+          );
+        }
 
-    // ---------- MODEL ----------
-    if(component.render_type === "model"){
-
-      const modelInfo = MODEL_DATABASE[component.name];
-
-      if(!modelInfo) return;
-
-      rendered.push(
-        <DynamicModel
-          key={component.id}
-          path={modelInfo.path}
-          isGem={modelInfo.isGem}
-          position={position}
-          rotation={component.transform?.rotation}
-          scale={component.transform?.scale}
-          materialOverrides={component.materialOverrides}
-        />
-      );
-
-      return;
-    }
-
-  });
-
-  return <>{rendered}</>;
+        return null;
+      })}
+    </>
+  );
 }
