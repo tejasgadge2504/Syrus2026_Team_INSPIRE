@@ -128,6 +128,17 @@ Generated models can be exported in:
 
 ## Implementation Status
 
+<table>
+  <tr>
+    <td><img src="readme/readme1.png" alt="Screenshot 1" width="400"/></td>
+    <td><img src="readme/readme2.png" alt="Screenshot 2" width="400"/></td>
+  </tr>
+  <tr>
+    <td><img src="readme/readme3.png" alt="Screenshot 3" width="400"/></td>
+    <td><img src="readme/readme4.png" alt="Screenshot 4" width="400"/></td>
+  </tr>
+</table>
+
 ### ✅ Completed
 - 2D image input and AI component detection
 - Prebuilt 3D component library (OBJ models)
