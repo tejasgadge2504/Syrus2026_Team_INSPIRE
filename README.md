@@ -1,6 +1,13 @@
-**SYRUS Hackathon 2026 – CodeCell VESIT** 
 
-**Track:** Agentic AI (Rezinix AI) | **Team:** Team INSPIRE
+**Track:** Agentic AI (Rezinix AI) 
+
+**PS:** AI-Driven 2D to 3D Jewelry Generation with Real-Time Customization (PS01)
+
+**Team:** Team INSPIRE
+
+**PPT:** [Link](https://www.canva.com/design/DAGO9vS1p1s/_MVXKSpuWTQPOvgUbz-e-Q/edit?utm_content=DAGO9vS1p1s&utm_campaign=designshare&utm_medium=link2&utm_source=sharebutton)
+
+**Youtube Video:** [Link](https://youtu.be/88za8LZrxN0)
 
 ---
 # GeminAI – Dil se Design Tak
