@@ -162,3 +162,6 @@ Generated models can be exported in:
 - Online jewelry visualization
 - Manufacturing and prototyping pipelines
 - AR/VR jewelry preview systems
+---
+
+**Built with ❤️ Team INSPIRE**
