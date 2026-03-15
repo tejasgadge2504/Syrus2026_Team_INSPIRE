@@ -31,6 +31,10 @@ Current workflows suffer from several limitations:
 
 ## Our Solution
 
+<p align="center">
+  <img src="readme/architecture.png" alt="Demo" width="600" />
+</p>
+
 GeminAI solves this by introducing a **component-based AI pipeline**.
 
 Instead of generating a single mesh, the system:
