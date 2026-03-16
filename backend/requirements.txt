@@ -4,3 +4,5 @@ google-genai
 pymongo
 python-dotenv
 PyJWT
+gradio_client
+trimesh
