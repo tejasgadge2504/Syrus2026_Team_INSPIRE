@@ -13,5 +13,10 @@ MODEL_DATABASE = {
         "path": "database/models/bead.obj",
         "type": "OBJ",
         "isGem": False
+    },
+    "ring_frame": {
+        "path": "database/models/ringFrame.obj",
+        "type": "OBJ",
+        "isGem": False
     }
 }
