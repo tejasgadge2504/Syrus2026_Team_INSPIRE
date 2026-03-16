@@ -15,11 +15,12 @@ def model_loader_agent(components):
 
                 db = MODEL_DATABASE[name]
 
-                model_results.append({
-                    "id": comp["id"],
-                    "name": name,
-                    "model_path": db["path"],
-                    "transform": comp.get("transform", {})
-                })
+                comp["model_path"] = db["path"]
+
+                comp["generated"] = {
+                    "status": "loaded"
+                }
+
+                model_results.append(comp)
 
     return model_results

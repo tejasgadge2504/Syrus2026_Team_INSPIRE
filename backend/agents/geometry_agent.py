@@ -4,54 +4,31 @@ from agents.cad_generation_agent import generate_cad_model
 def geometry_agent(components, image_path):
 
     results = []
+    base_model = None
     complex_detected = False
 
     for comp in components:
 
         if comp.get("render_type") == "geometry":
 
-            name = comp.get("name")
+            comp["generated"] = {
+                "status": "procedural"
+            }
 
-            # simple geometry (rings etc)
-            if name == "ring_band":
+            results.append(comp)
 
-                results.append({
-                    "id": comp["id"],
-                    "status": "simple",
-                    "geometry": comp.get("geometry"),
-                    "transform": comp.get("transform")
-                })
+        else:
+            complex_detected = True
 
-            else:
-                complex_detected = True
-
-    # try CAD generation
     if complex_detected:
 
-        try:
+        base_model = generate_cad_model(image_path)
 
-            obj_model = generate_cad_model(image_path)
+        if base_model:
 
             results.append({
                 "status": "complex_base_generated",
-                "model_path": obj_model
+                "model_path": base_model
             })
-
-        except Exception as e:
-
-            print("⚠️ CAD generation failed, switching to simple geometry")
-            print(e)
-
-            # fallback to simple geometry
-            for comp in components:
-
-                if comp.get("render_type") == "geometry":
-
-                    results.append({
-                        "id": comp["id"],
-                        "status": "fallback_simple",
-                        "geometry": comp.get("geometry"),
-                        "transform": comp.get("transform")
-                    })
 
     return results
