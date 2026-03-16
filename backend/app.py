@@ -5,17 +5,30 @@ from google.genai import types
 import json
 import re
 import io
+from concurrent.futures import ThreadPoolExecutor
+from database.model_database import MODEL_DATABASE
+import os
+import uuid
 from flask_cors import CORS
 
+from services.model_service import create_model_pipeline
+
+
 from auth import auth_bp
+from backend.designs import new_design_bp
 
 app = Flask(__name__)
 CORS(app)
 app.register_blueprint(auth_bp, url_prefix="/auth")
+app.register_blueprint(new_design_bp)
 
 # -------------------------
 # GEMINI CONFIG
 # -------------------------
+
+UPLOAD_DIR = "uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
 
 GEMINI_API_KEY = "AIzaSyDb0KT1JK8CfoaYIcqtdDvNog7BGBsJRYo"
 
@@ -113,6 +126,8 @@ def analyze_image(image):
     return {"error": "Could not parse JSON", "raw": text}
 
 
+
+
 # -------------------------
 # API ROUTE
 # -------------------------
@@ -131,6 +146,34 @@ def detect_components():
         return jsonify({"error": "Invalid image"}), 400
 
     result = analyze_image(image)
+
+    return jsonify(result)
+
+# ===============CREATE MODEL=============
+
+
+@app.route("/create-model", methods=["POST"])
+def create_model():
+
+    if "image" not in request.files:
+        return jsonify({"error": "Image required"}), 400
+
+    if "components" not in request.form:
+        return jsonify({"error": "Components JSON required"}), 400
+
+    image = request.files["image"]
+
+    filename = f"{uuid.uuid4()}.png"
+    image_path = os.path.join(UPLOAD_DIR, filename)
+
+    image.save(image_path)
+
+    components_json = json.loads(request.form["components"])
+
+    result = create_model_pipeline(
+        components_json["components"],
+        image_path
+    )
 
     return jsonify(result)
 
