@@ -4,7 +4,15 @@ from agents.scene_assembly_agent import assemble_scene
 from utils.parallel_executor import run_parallel_agents
 
 
-def create_model_pipeline(components, image_path):
+def create_model_pipeline(scene_json, image_path):
+
+    # FIX: support both dict and list
+    if isinstance(scene_json, list):
+        components = scene_json
+        scene_info = {}
+    else:
+        components = scene_json.get("components", [])
+        scene_info = scene_json.get("scene", {})
 
     models, geometry = run_parallel_agents(
         model_loader_agent,
@@ -16,18 +24,22 @@ def create_model_pipeline(components, image_path):
     base_model = None
 
     for g in geometry:
-        if g.get("status") == "complex_base_generated":
+
+        if isinstance(g, dict) and g.get("status") == "complex_base_generated":
+
             base_model = g["model_path"]
 
-    # if CAD generation failed
     if base_model is None:
         print("⚠️ Using simple geometry fallback")
 
     final_scene = assemble_scene(base_model, models)
 
     return {
-        "status": "completed",
-        "base_model": base_model,
-        "gems": models,
-        "final_glb": final_scene
+        "scene": scene_info,
+        "components": components,
+        "output": {
+            "status": "completed",
+            "base_model": base_model,
+            "final_glb": final_scene
+        }
     }

@@ -10,21 +10,33 @@ KAGGLE_MODEL_API = "https://afc8-34-9-133-7.ngrok-free.app/generate"
 
 def generate_cad_model(image_path):
 
-    files = {"image": open(image_path, "rb")}
+    try:
 
-    response = requests.post(KAGGLE_MODEL_API, files=files)
+        files = {"image": open(image_path, "rb")}
 
-    if response.status_code != 200:
-        return {"status": "error"}
+        response = requests.post(KAGGLE_MODEL_API, files=files)
 
-    model_url = response.json()["model_url"]
+        if response.status_code != 200:
+            print("CAD API error")
+            return None
 
-    obj_name = f"{uuid.uuid4()}.obj"
-    obj_path = os.path.join(OUTPUT_DIR, obj_name)
+        model_url = response.json().get("model_url")
 
-    obj_data = requests.get(model_url).content
+        if not model_url:
+            return None
 
-    with open(obj_path, "wb") as f:
-        f.write(obj_data)
+        obj_name = f"{uuid.uuid4()}.obj"
+        obj_path = os.path.join(OUTPUT_DIR, obj_name)
 
-    return obj_path
+        obj_data = requests.get(model_url).content
+
+        with open(obj_path, "wb") as f:
+            f.write(obj_data)
+
+        return obj_path
+
+    except Exception as e:
+
+        print("CAD generation failed:", e)
+
+        return None
