@@ -1,62 +1,28 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import Cookies from "js-cookie";
 import ModelRenderer from "./ModelRenderer";
 import ControlPanel  from "./ControlPanel";
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Brand tokens  (extracted from GeminAI logo)
-//   Primary:  blue  #4B6CF7  →  purple #9B59E8  →  pink #E040FB
-//   Dark bg:  #09090f  (near-black, cooler than warm gold theme)
-//   Surface:  #11111c  /  #18182a  /  #1f1f32
-//   Text:     #e8e4f4  (slightly purple-tinted white)
-//   Muted:    #6b6880  /  #45425a
+//  Brand tokens
 // ─────────────────────────────────────────────────────────────────────────────
 
 const T = {
-  // backgrounds
-  bg0:   "#09090f",
-  bg1:   "#11111c",
-  bg2:   "#18182a",
-  bg3:   "#1f1f32",
-  bg4:   "#27273e",
-
-  // brand gradient stops
-  blue:  "#4B6CF7",
-  purple:"#9B59E8",
-  pink:  "#E040FB",
-
-  // derived solids
-  accent:      "#7B5CE5",   // mid-purple — primary interactive accent
-  accentLight: "#9d80f0",
-  accentDim:   "#3d2e8a",
-
-  // text
-  text:    "#e8e4f4",
-  textSub: "#9490b0",
-  textDim: "#55526a",
-
-  // semantic
-  success: "#2ecc71",
-  danger:  "#e74c3c",
-
-  // gradients (CSS strings)
-  grad:         "linear-gradient(135deg,#4B6CF7,#9B59E8,#E040FB)",
-  gradH:        "linear-gradient(90deg,#4B6CF7,#9B59E8,#E040FB)",
-  gradBorder:   "linear-gradient(135deg,rgba(75,108,247,0.5),rgba(155,89,232,0.5),rgba(224,64,251,0.5))",
+  bg0: "#09090f", bg1: "#11111c", bg2: "#18182a", bg3: "#1f1f32", bg4: "#27273e",
+  blue: "#4B6CF7", purple: "#9B59E8", pink: "#E040FB",
+  accent: "#7B5CE5", accentLight: "#9d80f0", accentDim: "#3d2e8a",
+  text: "#e8e4f4", textSub: "#9490b0", textDim: "#55526a",
+  success: "#2ecc71", danger: "#e74c3c",
+  grad:  "linear-gradient(135deg,#4B6CF7,#9B59E8,#E040FB)",
+  gradH: "linear-gradient(90deg,#4B6CF7,#9B59E8,#E040FB)",
 };
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  Jewelry color maps (unchanged)
-// ─────────────────────────────────────────────────────────────────────────────
 
 const METAL_COLORS = {
-  yellow_gold: "#c9a84c", white_gold: "#c8c8c8",
-  rose_gold:   "#b5634d", platinum:   "#9fa8b0",
+  yellow_gold: "#c9a84c", white_gold: "#c8c8c8", rose_gold: "#b5634d", platinum: "#9fa8b0",
 };
-
 const GEM_COLORS = {
-  diamond: "#d6eaf8", ruby:  "#c0392b", sapphire: "#2471a3",
-  emerald: "#1e8449", amethyst: "#7d3c98", topaz: "#e67e22",
-  opal:    "#a8d8ea", pearl: "#f5f0e8",
+  diamond: "#d6eaf8", ruby: "#c0392b", sapphire: "#2471a3", emerald: "#1e8449",
+  amethyst: "#7d3c98", topaz: "#e67e22", opal: "#a8d8ea", pearl: "#f5f0e8",
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -64,76 +30,30 @@ const GEM_COLORS = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const GLOBAL_CSS = `
-  @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&family=DM+Sans:wght@300;400;500&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap');
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   ::-webkit-scrollbar { width: 3px; }
   ::-webkit-scrollbar-thumb { background: #27273e; border-radius: 2px; }
-
   input[type=range] { -webkit-appearance:none; appearance:none; height:3px; border-radius:2px; outline:none; cursor:pointer; }
   input[type=range]::-webkit-slider-thumb {
     -webkit-appearance:none; width:13px; height:13px; border-radius:50%;
     background: linear-gradient(135deg,#4B6CF7,#E040FB);
     cursor:pointer; box-shadow:0 0 6px rgba(155,89,232,0.6);
   }
-
   @keyframes pulse   { 0%,100%{opacity:1} 50%{opacity:0.4} }
   @keyframes fadeIn  { from{opacity:0;transform:translate(-50%,6px)} to{opacity:1;transform:translate(-50%,0)} }
   @keyframes gradShift { 0%{background-position:0% 50%} 50%{background-position:100% 50%} 100%{background-position:0% 50%} }
+  @keyframes spin    { to{transform:rotate(360deg)} }
+  @keyframes slideUp { from{opacity:0;transform:translateY(18px)} to{opacity:1;transform:translateY(0)} }
 
-  .geminal-logo-text {
-    font-family: 'Nunito', sans-serif;
-    font-weight: 700;
-    font-size: 15px;
-    background: linear-gradient(90deg,#4B6CF7,#9B59E8,#E040FB);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    letter-spacing: -0.3px;
-    line-height: 1.2;
-  }
-  .geminal-logo-sub {
-    font-family: 'DM Sans', sans-serif;
-    font-size: 8px;
-    color: #6b6880;
-    letter-spacing: 1.5px;
-    font-weight: 400;
-  }
-  .nav-btn-active {
-    background: linear-gradient(135deg,rgba(75,108,247,0.15),rgba(224,64,251,0.1)) !important;
-    border: 1px solid rgba(123,92,229,0.4) !important;
-    color: #9d80f0 !important;
-  }
-  .grad-border-btn {
-    position: relative;
-    background: #18182a;
-    border: 1px solid rgba(123,92,229,0.3);
-    color: #9490b0;
-    transition: all 0.2s;
-  }
-  .grad-border-btn:hover {
-    border-color: rgba(123,92,229,0.7);
-    color: #9d80f0;
-    background: rgba(123,92,229,0.08);
-  }
-  .accent-btn {
-    background: linear-gradient(135deg,#4B6CF7,#9B59E8,#E040FB) !important;
-    background-size: 200% 200% !important;
-    border: none !important;
-    color: #fff !important;
-    font-weight: 600 !important;
-    animation: gradShift 3s ease infinite;
-  }
-  .accent-btn:hover { opacity: 0.9; transform: scale(1.02); }
+  .vctrl-btn:hover { border-color:rgba(123,92,229,0.7)!important; color:#9d80f0!important; }
 
-  .tree-item-active {
-    border-left: 2px solid #7B5CE5 !important;
-    background: linear-gradient(90deg,rgba(75,108,247,0.08),transparent) !important;
-  }
-  .vctrl-btn:hover { border-color: rgba(123,92,229,0.7) !important; color: #9d80f0 !important; }
+  .export-item { transition: all 0.18s; }
+  .export-item:hover { background: rgba(75,108,247,0.12) !important; border-color: rgba(123,92,229,0.5) !important; transform: translateX(3px); }
 `;
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Styles object
+//  Styles
 // ─────────────────────────────────────────────────────────────────────────────
 
 const S = {
@@ -143,8 +63,6 @@ const S = {
     background: T.bg0, color: T.text,
     fontFamily: "'DM Sans',sans-serif", overflow: "hidden",
   },
-
-  // ── NAV ──
   nav: {
     height: "54px", background: T.bg1,
     borderBottom: `1px solid rgba(123,92,229,0.15)`,
@@ -156,26 +74,37 @@ const S = {
   navDiv:  { width: "1px", height: "22px", background: "rgba(123,92,229,0.2)", margin: "0 4px" },
   navTab: (a) => ({
     padding: "6px 13px", borderRadius: "7px", cursor: "pointer",
-    fontSize: "12px", fontFamily: "'DM Sans',sans-serif",
-    fontWeight: a ? 500 : 400,
-    color:      a ? "#9d80f0" : T.textSub,
+    fontSize: "12px", fontFamily: "'DM Sans',sans-serif", fontWeight: a ? 500 : 400,
+    color: a ? "#9d80f0" : T.textSub,
     background: a ? "rgba(75,108,247,0.1)" : "none",
-    border:     a ? "1px solid rgba(123,92,229,0.35)" : "1px solid transparent",
+    border: a ? "1px solid rgba(123,92,229,0.35)" : "1px solid transparent",
     transition: "all 0.2s",
   }),
   navRight: { marginLeft: "auto", display: "flex", gap: "7px", alignItems: "center" },
   btnGhost: {
     padding: "5px 12px", borderRadius: "7px", fontSize: "11px", cursor: "pointer",
-    fontFamily: "'DM Sans',sans-serif",
-    border: "1px solid rgba(123,92,229,0.25)",
+    fontFamily: "'DM Sans',sans-serif", border: "1px solid rgba(123,92,229,0.25)",
     background: T.bg2, color: T.textSub, transition: "all 0.2s",
   },
-  btnAccent: {
-    padding: "5px 16px", borderRadius: "7px", fontSize: "11px", cursor: "pointer",
+  btnAccent: (saving) => ({
+    padding: "5px 16px", borderRadius: "7px", fontSize: "11px", cursor: saving ? "not-allowed" : "pointer",
     fontFamily: "'DM Sans',sans-serif",
-    background: "linear-gradient(135deg,#4B6CF7,#9B59E8)",
+    background: saving
+      ? "rgba(75,108,247,0.4)"
+      : "linear-gradient(135deg,#4B6CF7,#9B59E8)",
+    backgroundSize: "200% 200%",
+    animation: saving ? "none" : "gradShift 3.5s ease infinite",
     border: "none", color: "#fff", fontWeight: 600, transition: "all 0.2s",
-    boxShadow: "0 2px 12px rgba(75,108,247,0.35)",
+    boxShadow: saving ? "none" : "0 2px 12px rgba(75,108,247,0.35)",
+    display: "flex", alignItems: "center", gap: "6px",
+    opacity: saving ? 0.7 : 1,
+  }),
+  btnExport: {
+    padding: "5px 12px", borderRadius: "7px", fontSize: "11px", cursor: "pointer",
+    fontFamily: "'DM Sans',sans-serif",
+    background: "rgba(155,89,232,0.1)", border: "1px solid rgba(155,89,232,0.3)",
+    color: "#b38ef0", transition: "all 0.2s",
+    display: "flex", alignItems: "center", gap: "5px",
   },
   avatar: {
     width: "30px", height: "30px", borderRadius: "50%",
@@ -184,8 +113,6 @@ const S = {
     fontSize: "11px", fontWeight: 700, color: "#fff", cursor: "pointer",
     boxShadow: "0 2px 8px rgba(75,108,247,0.4)",
   },
-
-  // ── TOOLBAR ──
   toolbar: {
     height: "42px", background: T.bg1,
     borderBottom: "1px solid rgba(255,255,255,0.04)",
@@ -195,32 +122,24 @@ const S = {
   viewPill: { display: "flex", background: T.bg3, borderRadius: "7px", padding: "2px", gap: "1px" },
   viewBtn: (a) => ({
     padding: "4px 11px", borderRadius: "5px", fontSize: "11px", cursor: "pointer",
-    color:      a ? "#fff" : T.textDim,
-    background: a ? "linear-gradient(135deg,#4B6CF7,#9B59E8)" : "none",
-    border:     "none",
-    fontFamily: "'DM Sans',sans-serif",
-    fontWeight: a ? 600 : 400, transition: "all 0.2s",
-    boxShadow:  a ? "0 1px 6px rgba(75,108,247,0.4)" : "none",
+    color: a ? "#fff" : T.textDim, background: a ? "linear-gradient(135deg,#4B6CF7,#9B59E8)" : "none",
+    border: "none", fontFamily: "'DM Sans',sans-serif", fontWeight: a ? 600 : 400, transition: "all 0.2s",
+    boxShadow: a ? "0 1px 6px rgba(75,108,247,0.4)" : "none",
   }),
   envBtn: (a) => ({
     padding: "4px 10px", borderRadius: "6px", fontSize: "11px", cursor: "pointer",
-    color:      a ? "#9d80f0" : T.textDim,
-    border:     a ? "1px solid rgba(123,92,229,0.4)" : "1px solid transparent",
+    color: a ? "#9d80f0" : T.textDim,
+    border: a ? "1px solid rgba(123,92,229,0.4)" : "1px solid transparent",
     background: a ? "rgba(75,108,247,0.1)" : "none",
     fontFamily: "'DM Sans',sans-serif", transition: "all 0.2s",
   }),
   qualBadge: {
-    display: "flex", alignItems: "center", gap: "6px",
-    padding: "4px 10px", borderRadius: "7px",
-    background: "rgba(46,204,113,0.1)", border: "1px solid rgba(46,204,113,0.25)",
+    display: "flex", alignItems: "center", gap: "6px", padding: "4px 10px",
+    borderRadius: "7px", background: "rgba(46,204,113,0.1)", border: "1px solid rgba(46,204,113,0.25)",
   },
   qualNum:  { fontFamily: "'Nunito',sans-serif", fontSize: "16px", fontWeight: 700, color: T.success },
   qualText: { fontSize: "9px", color: T.success, lineHeight: 1.3 },
-
-  // ── MAIN ──
   main: { display: "flex", flex: 1, overflow: "hidden" },
-
-  // ── LEFT PANEL ──
   leftPanel: {
     width: "205px", background: T.bg1,
     borderRight: "1px solid rgba(123,92,229,0.1)",
@@ -235,80 +154,236 @@ const S = {
   treeScroll: { flex: 1, overflowY: "auto", scrollbarWidth: "thin", scrollbarColor: `${T.bg4} transparent` },
   treeChildItem: (active) => ({
     padding: "6px 12px 6px 20px", cursor: "pointer",
-    display: "flex", alignItems: "center", gap: "7px",
-    transition: "all 0.15s",
+    display: "flex", alignItems: "center", gap: "7px", transition: "all 0.15s",
     borderLeft: active ? `2px solid ${T.accent}` : "2px solid transparent",
-    background:  active ? "linear-gradient(90deg,rgba(75,108,247,0.1),transparent)" : "transparent",
+    background: active ? "linear-gradient(90deg,rgba(75,108,247,0.1),transparent)" : "transparent",
   }),
   treeIcon: (kind) => ({
     width: "18px", height: "18px", borderRadius: "5px", flexShrink: 0,
     display: "flex", alignItems: "center", justifyContent: "center", fontSize: "10px",
-    background:
-      kind === "gem"     ? "rgba(75,108,247,0.2)" :
-      kind === "prong"   ? "rgba(155,89,232,0.15)" :
-      kind === "setting" ? "rgba(224,64,251,0.12)" :
-                           "rgba(123,92,229,0.15)",
-    color:
-      kind === "gem"     ? "#7b9ff9" :
-      kind === "prong"   ? "#b38ef0" :
-      kind === "setting" ? "#d97af5" :
-                           "#9d80f0",
+    background: kind === "gem" ? "rgba(75,108,247,0.2)" : kind === "prong" ? "rgba(155,89,232,0.15)" : kind === "setting" ? "rgba(224,64,251,0.12)" : "rgba(123,92,229,0.15)",
+    color:      kind === "gem" ? "#7b9ff9" : kind === "prong" ? "#b38ef0" : kind === "setting" ? "#d97af5" : "#9d80f0",
   }),
   treeLabel: { fontSize: "12px", fontWeight: 500, color: T.text },
   treeMeta:  { marginLeft: "auto", fontSize: "10px", color: T.textDim },
-  treeProp:  {
-    display: "flex", justifyContent: "space-between",
-    padding: "2px 12px 2px 30px", fontSize: "10px",
-  },
-
-  // ── VIEWPORT ──
-  viewport: {
-    flex: 1, background: T.bg0,
-    position: "relative", overflow: "hidden",
-    display: "flex", flexDirection: "column",
-  },
-  vpInner: { flex: 1, position: "relative", overflow: "hidden" },
-  vpCtrls: {
-    position: "absolute", right: "12px", top: "50%", transform: "translateY(-50%)",
-    display: "flex", flexDirection: "column", gap: "6px", zIndex: 5,
-  },
+  treeProp:  { display: "flex", justifyContent: "space-between", padding: "2px 12px 2px 30px", fontSize: "10px" },
+  viewport: { flex: 1, background: T.bg0, position: "relative", overflow: "hidden", display: "flex", flexDirection: "column" },
+  vpInner:  { flex: 1, position: "relative", overflow: "hidden" },
+  vpCtrls:  { position: "absolute", right: "12px", top: "50%", transform: "translateY(-50%)", display: "flex", flexDirection: "column", gap: "6px", zIndex: 5 },
   vpCtrl: {
-    width: "30px", height: "30px",
-    background: "rgba(9,9,15,0.85)",
-    border: "1px solid rgba(123,92,229,0.2)",
-    borderRadius: "7px",
+    width: "30px", height: "30px", background: "rgba(9,9,15,0.85)",
+    border: "1px solid rgba(123,92,229,0.2)", borderRadius: "7px",
     display: "flex", alignItems: "center", justifyContent: "center",
     cursor: "pointer", color: T.textSub, fontSize: "14px", transition: "all 0.2s",
   },
-  toast: {
+  toast: (type) => ({
     position: "absolute", bottom: "90px", left: "50%", transform: "translateX(-50%)",
-    background: "rgba(75,108,247,0.12)",
-    border: "1px solid rgba(123,92,229,0.4)",
-    color: "#9d80f0",
+    background: type === "error" ? "rgba(231,76,60,0.15)" : type === "success" ? "rgba(46,204,113,0.12)" : "rgba(75,108,247,0.12)",
+    border: `1px solid ${type === "error" ? "rgba(231,76,60,0.4)" : type === "success" ? "rgba(46,204,113,0.4)" : "rgba(123,92,229,0.4)"}`,
+    color:  type === "error" ? "#e74c3c" : type === "success" ? "#2ecc71" : "#9d80f0",
     padding: "7px 16px", borderRadius: "8px",
     fontSize: "12px", pointerEvents: "none", zIndex: 20, whiteSpace: "nowrap",
-    animation: "fadeIn 0.2s ease",
-    backdropFilter: "blur(6px)",
-  },
+    animation: "fadeIn 0.2s ease", backdropFilter: "blur(6px)",
+    display: "flex", alignItems: "center", gap: "7px",
+  }),
   versionBar: {
-    height: "72px",
-    background: `linear-gradient(to top,${T.bg1},transparent)`,
-    padding: "0 14px 10px",
-    display: "flex", alignItems: "flex-end", gap: "10px", flexShrink: 0,
+    height: "72px", background: `linear-gradient(to top,${T.bg1},transparent)`,
+    padding: "0 14px 10px", display: "flex", alignItems: "flex-end", gap: "10px", flexShrink: 0,
   },
-  vhLabel: {
-    fontSize: "9px", color: T.textDim, letterSpacing: "1px",
-    display: "flex", alignItems: "center", gap: "5px", marginRight: "4px",
-  },
+  vhLabel: { fontSize: "9px", color: T.textDim, letterSpacing: "1px", display: "flex", alignItems: "center", gap: "5px", marginRight: "4px" },
   vThumb: (a) => ({
-    width: "50px", height: "50px", borderRadius: "8px",
-    background: T.bg3,
+    width: "50px", height: "50px", borderRadius: "8px", background: T.bg3,
     border: a ? `1px solid ${T.accent}` : "1px solid rgba(123,92,229,0.15)",
     boxShadow: a ? "0 0 8px rgba(123,92,229,0.3)" : "none",
     display: "flex", alignItems: "center", justifyContent: "center",
     cursor: "pointer", transition: "all 0.2s", position: "relative", overflow: "hidden",
   }),
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Export Modal
+// ─────────────────────────────────────────────────────────────────────────────
+
+function ExportModal({ open, onClose, modelRef, designName }) {
+  const [status, setStatus] = useState({}); // { png|glb|stl: 'idle'|'loading'|'done'|'error' }
+
+  if (!open) return null;
+
+  const triggerDownload = (blob, filename) => {
+    const url = URL.createObjectURL(blob);
+    const a   = document.createElement("a");
+    a.href     = url;
+    a.download = filename;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  };
+
+  const exportPNG = async () => {
+    setStatus((s) => ({ ...s, png: "loading" }));
+    try {
+      const dataURL = modelRef.current?.captureImage(4); // 4× resolution
+      if (!dataURL) throw new Error("Renderer not ready");
+      // Convert dataURL → blob
+      const res  = await fetch(dataURL);
+      const blob = await res.blob();
+      triggerDownload(blob, `${designName || "design"}_render.png`);
+      setStatus((s) => ({ ...s, png: "done" }));
+    } catch (e) {
+      console.error(e);
+      setStatus((s) => ({ ...s, png: "error" }));
+    }
+  };
+
+  const exportGLB = async () => {
+    setStatus((s) => ({ ...s, glb: "loading" }));
+    try {
+      const blob = await modelRef.current?.exportGLB();
+      triggerDownload(blob, `${designName || "design"}.glb`);
+      setStatus((s) => ({ ...s, glb: "done" }));
+    } catch (e) {
+      console.error(e);
+      setStatus((s) => ({ ...s, glb: "error" }));
+    }
+  };
+
+  const exportSTL = () => {
+    setStatus((s) => ({ ...s, stl: "loading" }));
+    try {
+      const blob = modelRef.current?.exportSTL();
+      triggerDownload(blob, `${designName || "design"}.stl`);
+      setStatus((s) => ({ ...s, stl: "done" }));
+    } catch (e) {
+      console.error(e);
+      setStatus((s) => ({ ...s, stl: "error" }));
+    }
+  };
+
+  const formats = [
+    {
+      key:   "png",
+      icon:  "🖼",
+      label: "High-Quality PNG",
+      sub:   "4× resolution render • transparent-ready",
+      color: "#4B6CF7",
+      fn:    exportPNG,
+    },
+    {
+      key:   "glb",
+      icon:  "◈",
+      label: "GLB  (3D Model)",
+      sub:   "GLTF binary • AR / game engine ready",
+      color: "#9B59E8",
+      fn:    exportGLB,
+    },
+    {
+      key:   "stl",
+      icon:  "◻",
+      label: "STL  (3D Print)",
+      sub:   "ASCII STL • 3D printer / CAD ready",
+      color: "#E040FB",
+      fn:    exportSTL,
+    },
+  ];
+
+  const stateIcon = (k) => {
+    const s = status[k];
+    if (s === "loading") return (
+      <div style={{ width: "16px", height: "16px", borderRadius: "50%", border: "2px solid rgba(255,255,255,0.2)", borderTopColor: "#fff", animation: "spin 0.7s linear infinite" }} />
+    );
+    if (s === "done")  return <span style={{ color: T.success, fontSize: "14px" }}>✓</span>;
+    if (s === "error") return <span style={{ color: T.danger,  fontSize: "14px" }}>✗</span>;
+    return (
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <path d="M8 2v8M5 7l3 3 3-3M2 13h12" />
+      </svg>
+    );
+  };
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, zIndex: 200,
+        background: "rgba(0,0,0,0.65)", backdropFilter: "blur(6px)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: "380px", background: T.bg1, borderRadius: "18px",
+          border: "1px solid rgba(123,92,229,0.2)",
+          boxShadow: "0 24px 80px rgba(0,0,0,0.6)",
+          overflow: "hidden", fontFamily: "'DM Sans',sans-serif",
+          animation: "slideUp 0.22s ease",
+        }}
+      >
+        {/* Header */}
+        <div style={{
+          padding: "20px 22px 16px",
+          background: "linear-gradient(135deg,rgba(75,108,247,0.1),rgba(224,64,251,0.06))",
+          borderBottom: "1px solid rgba(123,92,229,0.12)",
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+        }}>
+          <div>
+            <div style={{ fontSize: "15px", fontWeight: 700, color: T.text, fontFamily: "'Nunito',sans-serif" }}>Export Design</div>
+            <div style={{ fontSize: "11px", color: T.textDim, marginTop: "2px" }}>
+              {designName || "Untitled design"}
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            style={{ width: "28px", height: "28px", borderRadius: "7px", border: "1px solid rgba(123,92,229,0.2)", background: T.bg2, color: T.textSub, cursor: "pointer", fontSize: "16px", display: "flex", alignItems: "center", justifyContent: "center" }}
+          >×</button>
+        </div>
+
+        {/* Format list */}
+        <div style={{ padding: "14px 16px 20px", display: "flex", flexDirection: "column", gap: "8px" }}>
+          {formats.map((f) => (
+            <div
+              key={f.key}
+              className="export-item"
+              onClick={status[f.key] === "loading" ? undefined : f.fn}
+              style={{
+                display: "flex", alignItems: "center", gap: "14px",
+                padding: "12px 14px", borderRadius: "11px", cursor: "pointer",
+                border: "1px solid rgba(123,92,229,0.12)",
+                background: T.bg2,
+              }}
+            >
+              <div style={{
+                width: "38px", height: "38px", borderRadius: "10px", flexShrink: 0,
+                background: `${f.color}18`, border: `1px solid ${f.color}33`,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: "17px",
+              }}>{f.icon}</div>
+
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: "13px", fontWeight: 600, color: T.text }}>{f.label}</div>
+                <div style={{ fontSize: "10px", color: T.textDim, marginTop: "2px" }}>{f.sub}</div>
+              </div>
+
+              <div style={{ color: T.textSub, flexShrink: 0, display: "flex", alignItems: "center" }}>
+                {stateIcon(f.key)}
+              </div>
+            </div>
+          ))}
+
+          {/* Close */}
+          <button
+            onClick={onClose}
+            style={{
+              marginTop: "4px", width: "100%", padding: "9px", borderRadius: "9px",
+              background: "rgba(123,92,229,0.07)", border: "1px solid rgba(123,92,229,0.18)",
+              color: T.textSub, cursor: "pointer", fontSize: "12px",
+              fontFamily: "'DM Sans',sans-serif", transition: "all 0.2s",
+            }}
+          >Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  ComponentTree
@@ -333,12 +408,12 @@ function getIconChar(type) {
 function getCompProps(comp) {
   const t = (comp.type||"").toLowerCase();
   if (["gem","diamond","stone","gemstone"].includes(t)) return [
-    ["Type", comp.materialOverrides?.gemType  || comp.type || "diamond"],
-    ["Cut",  comp.geometry?.cut               || "round"],
-    ["Size", comp.geometry?.caratSize         || "1ct"],
+    ["Type", comp.materialOverrides?.gemType || comp.type || "diamond"],
+    ["Cut",  comp.geometry?.cut              || "round"],
+    ["Size", comp.geometry?.caratSize        || "1ct"],
   ];
   if (["prong","prongs"].includes(t)) return [
-    ["Count",  comp.geometry?.prongCount  || 4],
+    ["Count",  comp.geometry?.prongCount || 4],
     ["Height", (comp.geometry?.prongHeight || 1.2) + "mm"],
   ];
   if (["setting","basket","bezel"].includes(t)) return [
@@ -369,12 +444,7 @@ function ComponentTree({ jewelryJSON, selectedId, onSelect }) {
           <div key={comp.id} style={{ borderTop: "1px solid rgba(123,92,229,0.06)" }}>
             <div style={S.treeChildItem(active)} onClick={() => onSelect(comp.id)}>
               <span
-                style={{
-                  fontSize: "8px", color: T.textDim, cursor: "pointer",
-                  width: "8px", flexShrink: 0, display: "inline-block",
-                  transition: "transform 0.2s",
-                  transform: isExp(comp.id) ? "rotate(90deg)" : "none",
-                }}
+                style={{ fontSize: "8px", color: T.textDim, cursor: "pointer", width: "8px", flexShrink: 0, display: "inline-block", transition: "transform 0.2s", transform: isExp(comp.id) ? "rotate(90deg)" : "none" }}
                 onClick={(e) => { e.stopPropagation(); setExpanded(p => ({ ...p, [comp.id]: !p[comp.id] })); }}
               >▶</span>
               <div style={S.treeIcon(kind)}>{getIconChar(comp.type)}</div>
@@ -406,10 +476,14 @@ export default function Editor() {
   const [navTab,      setNavTab]      = useState("Designer");
   const [viewMode,    setViewMode]    = useState("Pbr");
   const [envMode,     setEnvMode]     = useState("Studio");
-  const [toast,       setToast]       = useState(null);
+  const [toast,       setToast]       = useState(null);   // { msg, type }
+  const [saving,      setSaving]      = useState(false);
+  const [showExport,  setShowExport]  = useState(false);
   const [versionList, setVersionList] = useState([]);
-  const toastTimer = useRef(null);
-  const designId   = localStorage.getItem("currentDesignId");
+
+  const toastTimer  = useRef(null);
+  const modelRef    = useRef(null);   // ← forwarded ref into ModelRenderer
+  const designId    = localStorage.getItem("currentDesignId");
 
   useEffect(() => {
     if (!designId) return;
@@ -423,38 +497,70 @@ export default function Editor() {
     }
   }, [designId]);
 
-  const showToast = useCallback((msg, ms = 2200) => {
+  const showToast = useCallback((msg, type = "info", ms = 2800) => {
     clearTimeout(toastTimer.current);
-    setToast(msg);
+    setToast({ msg, type });
     toastTimer.current = setTimeout(() => setToast(null), ms);
   }, []);
 
-  const handleSave = useCallback(() => {
-    if (!jewelryJSON || !designId) return;
-    const str = JSON.stringify(jewelryJSON);
-    localStorage.setItem(`design_${designId}_level2`, str);
-    localStorage.setItem(`design_${designId}_level1`, str);
-    showToast("✓ Design saved");
-  }, [jewelryJSON, designId, showToast]);
+  // ── SAVE — PATCH API + localStorage ───────────────────────────────────────
+  const handleSave = useCallback(async () => {
+    if (!jewelryJSON || !designId || saving) return;
 
+    setSaving(true);
+    showToast("Saving…", "info", 60000); // sticky until done
+
+    // Always keep localStorage in sync
+    const level2Str = JSON.stringify(jewelryJSON);
+    const level1Str = localStorage.getItem(`design_${designId}_level1`) || level2Str;
+    localStorage.setItem(`design_${designId}_level2`, level2Str);
+
+    try {
+      const token = Cookies.get("token");
+      const res   = await fetch(`http://localhost:5000/designs/save-model/${designId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          level1_json: JSON.parse(level1Str),
+          level2_json: jewelryJSON,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        // Snapshot to version history
+        const vLabel = `v${versionList.length + 1}`;
+        setVersionList((prev) => [...prev, { label: vLabel, data: { ...jewelryJSON } }]);
+        showToast("✓ Design saved to server", "success");
+      } else {
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+    } catch (err) {
+      console.error("Save failed:", err);
+      showToast(`Save failed: ${err.message}`, "error");
+    } finally {
+      setSaving(false);
+    }
+  }, [jewelryJSON, designId, saving, showToast, versionList]);
+
+  // ── QUICK ACTIONS ─────────────────────────────────────────────────────────
   const handleQuickAction = useCallback((action) => {
     const a = action.toLowerCase();
     setJewelryJSON((prev) => {
       if (!prev) return prev;
       const components = prev.components.map((comp) => {
-        const copy = {
-          ...comp,
-          materialOverrides: { ...(comp.materialOverrides || {}) },
-          geometry:          { ...(comp.geometry          || {}) },
-        };
+        const copy = { ...comp, materialOverrides: { ...(comp.materialOverrides || {}) }, geometry: { ...(comp.geometry || {}) } };
         const ctype  = (comp.type||"").toLowerCase();
         const isGem  = ["gem","diamond","stone","gemstone","center_stone"].includes(ctype);
         const isMetal = ["band","ring","shank","prong","prongs","setting","basket"].includes(ctype);
-
         if (isMetal) {
-          if (a.includes("rose gold"))   { copy.materialOverrides.color = METAL_COLORS.rose_gold;   copy.materialOverrides.metalType = "rose_gold";   }
-          if (a.includes("white gold"))  { copy.materialOverrides.color = METAL_COLORS.white_gold;  copy.materialOverrides.metalType = "white_gold";  }
-          if (a.includes("platinum"))    { copy.materialOverrides.color = METAL_COLORS.platinum;    copy.materialOverrides.metalType = "platinum";    }
+          if (a.includes("rose gold"))   { copy.materialOverrides.color = METAL_COLORS.rose_gold;   copy.materialOverrides.metalType = "rose_gold"; }
+          if (a.includes("white gold"))  { copy.materialOverrides.color = METAL_COLORS.white_gold;  copy.materialOverrides.metalType = "white_gold"; }
+          if (a.includes("platinum"))    { copy.materialOverrides.color = METAL_COLORS.platinum;    copy.materialOverrides.metalType = "platinum"; }
           if (a.includes("yellow gold")) { copy.materialOverrides.color = METAL_COLORS.yellow_gold; copy.materialOverrides.metalType = "yellow_gold"; }
           if (a.includes("thin band") || a.includes("minimal")) copy.geometry.bandWidth = 1.5;
           if (a.includes("thick band")) copy.geometry.bandWidth = 4.0;
@@ -468,17 +574,16 @@ export default function Editor() {
       });
       return { ...prev, components };
     });
-    showToast("✓ " + action);
+    showToast("✓ " + action, "info");
   }, [showToast]);
 
-  // ── No design loaded ────────────────────────────────────────────────────
+  // ── No design ─────────────────────────────────────────────────────────────
   if (!jewelryJSON) {
     return (
       <div style={{ ...S.app, alignItems: "center", justifyContent: "center" }}>
         <style>{GLOBAL_CSS}</style>
         <div style={{ textAlign: "center" }}>
-          {/* Logo centered */}
-          <img src="assets/logo.png" alt="GeminAI" style={{ height: "70px", marginBottom: "10px", opacity: 0.9 }} />
+          <img src="/assets/logo.png" alt="GeminAI" style={{ height: "48px", marginBottom: "20px", opacity: 0.9 }} />
           <div style={{ fontSize: "13px", color: T.textSub, marginBottom: "8px" }}>No design loaded</div>
           <div style={{ fontSize: "11px", color: T.textDim, lineHeight: 1.7 }}>
             Use the Upload modal to detect &amp; create a model,<br />
@@ -490,8 +595,9 @@ export default function Editor() {
   }
 
   const VIEW_MODES = ["Pbr", "Clay", "Wireframe"];
-  const ENV_MODES  = ["Studio"];
-  const NAV_TABS   = ["Designer Studio"];
+  const ENV_MODES  = ["Studio", "Showroom", "Dramatic"];
+  const NAV_TABS   = ["Generate", "Designer", "Catalog", "Export"];
+  const designName = jewelryJSON?.name || `Design ${designId?.slice(-4) || ""}`;
 
   return (
     <div style={S.app}>
@@ -499,22 +605,37 @@ export default function Editor() {
 
       {/* ── TOP NAV ── */}
       <nav style={S.nav}>
-        {/* Logo — real PNG from assets */}
         <div style={S.logo}>
           <img src="/assets/logo.png" alt="GeminAI" style={S.logoImg} />
         </div>
-
         <div style={S.navDiv} />
-
         {NAV_TABS.map((t) => (
           <button key={t} style={S.navTab(navTab === t)} onClick={() => setNavTab(t)}>{t}</button>
         ))}
 
         <div style={S.navRight}>
-          {["AR Try‑On", "Capture", "Export", "Package"].map((b) => (
+          {["AR Try‑On", "Capture", "Package"].map((b) => (
             <button key={b} style={S.btnGhost}>{b}</button>
           ))}
-          <button style={S.btnAccent} onClick={handleSave}>Save</button>
+
+          {/* Export button */}
+          <button style={S.btnExport} onClick={() => setShowExport(true)}>
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <path d="M8 2v8M5 7l3 3 3-3M2 13h12" />
+            </svg>
+            Export
+          </button>
+
+          {/* Save button */}
+          <button style={S.btnAccent(saving)} onClick={handleSave} disabled={saving}>
+            {saving ? (
+              <>
+                <div style={{ width: "11px", height: "11px", borderRadius: "50%", border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", animation: "spin 0.7s linear infinite" }} />
+                Saving…
+              </>
+            ) : "Save"}
+          </button>
+
           <div style={S.avatar}>JN</div>
         </div>
       </nav>
@@ -543,7 +664,7 @@ export default function Editor() {
       {/* ── MAIN ── */}
       <div style={S.main}>
 
-        {/* LEFT: Component Tree */}
+        {/* LEFT */}
         <div style={S.leftPanel}>
           <div style={S.panelHdr}>Component Tree</div>
           <ComponentTree
@@ -552,22 +673,24 @@ export default function Editor() {
             onSelect={(id) => {
               setSelectedId(id);
               const comp = jewelryJSON.components.find((c) => c.id === id);
-              if (comp) showToast(`Selected: ${comp.name || id}`);
+              if (comp) showToast(`Selected: ${comp.name || id}`, "info");
             }}
           />
         </div>
 
-        {/* CENTER: Viewport */}
+        {/* CENTER */}
         <div style={S.viewport}>
           <div style={S.vpInner}>
+            {/* Pass ref to ModelRenderer */}
             <ModelRenderer
+              ref={modelRef}
               jewelryJSON={jewelryJSON}
               selectedId={selectedId}
               setSelectedId={(id) => {
                 setSelectedId(id);
                 if (id) {
                   const comp = jewelryJSON.components.find((c) => c.id === id);
-                  showToast(`Selected: ${comp?.name || id}`);
+                  showToast(`Selected: ${comp?.name || id}`, "info");
                 }
               }}
               viewMode={viewMode}
@@ -580,7 +703,15 @@ export default function Editor() {
               ))}
             </div>
 
-            {toast && <div style={S.toast}>{toast}</div>}
+            {/* Toast */}
+            {toast && (
+              <div style={S.toast(toast.type)}>
+                {toast.type === "success" && <span>✓</span>}
+                {toast.type === "error"   && <span>✗</span>}
+                {toast.type === "info"    && <span>◈</span>}
+                {toast.msg}
+              </div>
+            )}
           </div>
 
           {/* Version bar */}
@@ -596,7 +727,7 @@ export default function Editor() {
             </div>
             {versionList.map((v, i) => (
               <div key={i} style={S.vThumb(i === versionList.length - 1)}
-                onClick={() => { setJewelryJSON(v.data); showToast(`Restored ${v.label}`); }}>
+                onClick={() => { setJewelryJSON(v.data); showToast(`Restored ${v.label}`, "info"); }}>
                 <svg width="30" height="30" viewBox="0 0 32 32">
                   <ellipse cx="16" cy="22" rx="11" ry="3.5" fill="none" stroke="#7B5CE5" strokeWidth="3" />
                   <polygon points="16,8 20,14 16,18 12,14" fill="#9d80f0" opacity="0.9" />
@@ -607,7 +738,7 @@ export default function Editor() {
           </div>
         </div>
 
-        {/* RIGHT: Control Panel */}
+        {/* RIGHT */}
         <ControlPanel
           selectedId={selectedId}
           jewelryJSON={jewelryJSON}
@@ -617,6 +748,14 @@ export default function Editor() {
           onQuickAction={handleQuickAction}
         />
       </div>
+
+      {/* ── EXPORT MODAL ── */}
+      <ExportModal
+        open={showExport}
+        onClose={() => setShowExport(false)}
+        modelRef={modelRef}
+        designName={designName}
+      />
     </div>
   );
 }
