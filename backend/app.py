@@ -15,7 +15,7 @@ from services.model_service import create_model_pipeline
 
 
 from auth import auth_bp
-from backend.designs import new_design_bp
+from designs import new_design_bp
 
 app = Flask(__name__)
 CORS(app)
@@ -37,7 +37,11 @@ client = genai.Client(api_key=GEMINI_API_KEY)
 # -------------------------
 # STRICT PROMPT
 # -------------------------
+from flask import send_from_directory
 
+@app.route('/database/<path:filename>')
+def serve_database(filename):
+    return send_from_directory('database', filename)
 PROMPT = """
 You are an expert AI Jewelry Analyzer.
 
@@ -129,9 +133,55 @@ def analyze_image(image):
 
 
 
+
 # -------------------------
-# API ROUTE
+# GENERATE LEVEL JSON AND PRICE ESTIMATION
 # -------------------------
+
+@app.route("/generate-level-json", methods=["POST"])
+def generate_level_json():
+    data = request.get_json()
+    level1_json = data.get("level1_json")
+    level2_json = data.get("level2_json")
+    if not (level1_json and level2_json):
+        return jsonify({"error": "Missing level1_json or level2_json"}), 400
+
+    # Compose prompt for Gemini price estimation
+    price_prompt = f"""
+You are an expert jewelry pricing estimator.
+Given the following level1 and level2 JSON for a jewelry design, estimate the price in INR.
+Return ONLY JSON in this format:
+{{
+  price_estimation: {{
+    currency: "INR",
+    estimated_price: <number>,
+    breakdown: {{ metal: <number>, gem: <number> }}
+  }}
+}}
+
+level1_json: {json.dumps(level1_json)}
+level2_json: {json.dumps(level2_json)}
+"""
+
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=[price_prompt]
+    )
+    text = response.text
+    json_match = re.search(r"\{.*\}", text, re.S)
+    if json_match:
+        try:
+            price_data = json.loads(json_match.group())
+        except json.JSONDecodeError:
+            price_data = {"error": "Invalid JSON returned", "raw": text}
+    else:
+        price_data = {"error": "Could not parse JSON", "raw": text}
+
+    return jsonify({
+        "level1_json": level1_json,
+        "level2_json": level2_json,
+        **price_data
+    })
 
 @app.route("/detect_jewelry_components", methods=["POST"])
 def detect_components():
