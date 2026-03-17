@@ -1,379 +1,645 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Brand tokens (must match Editor.jsx)
+//  Flask API endpoint — set REACT_APP_API_BASE in your .env
 // ─────────────────────────────────────────────────────────────────────────────
+const API_BASE     = (typeof process !== "undefined" && process.env?.REACT_APP_API_BASE) || "http://localhost:5000";
+const ESTIMATE_URL = `${API_BASE}/api/price/estimate`;
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  Brand tokens
+// ─────────────────────────────────────────────────────────────────────────────
 const T = {
-  bg0:         "#09090f",
-  bg1:         "#11111c",
-  bg2:         "#18182a",
-  bg3:         "#1f1f32",
-  bg4:         "#27273e",
-  blue:        "#4B6CF7",
-  purple:      "#9B59E8",
-  pink:        "#E040FB",
-  accent:      "#7B5CE5",
-  accentLight: "#9d80f0",
-  accentDim:   "#3d2e8a",
-  text:        "#e8e4f4",
-  textSub:     "#9490b0",
-  textDim:     "#55526a",
-  success:     "#2ecc71",
-  danger:      "#e74c3c",
-  grad:        "linear-gradient(135deg,#4B6CF7,#9B59E8,#E040FB)",
+  bg0:"#09090f", bg1:"#11111c", bg2:"#18182a", bg3:"#1f1f32", bg4:"#27273e",
+  accent:"#7B5CE5", accentLight:"#9d80f0",
+  text:"#e8e4f4", textSub:"#9490b0", textDim:"#55526a",
+  success:"#2ecc71", danger:"#e74c3c",
+  grad:"linear-gradient(135deg,#4B6CF7,#9B59E8,#E040FB)",
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Constants
+//  DIAMOND COLOURS
 // ─────────────────────────────────────────────────────────────────────────────
+const DIAMOND_COLORS = [
+  { id:"diamond_yellow", label:"Yellow", color:"#FFD700",
+    gradient:"radial-gradient(circle at 35% 35%,#fff176,#f9a825)",
+    mult:1.15, note:"Fancy Yellow · natural colour" },
+  { id:"diamond_white",  label:"White",  color:"#ddeeff",
+    gradient:"radial-gradient(circle at 35% 35%,#ffffff,#cfd8dc)",
+    mult:1.00, note:"Colourless D–F range (base)" },
+  { id:"diamond_rose",   label:"Rose",   color:"#f48fb1",
+    gradient:"radial-gradient(circle at 35% 35%,#fce4ec,#e91e63)",
+    mult:2.40, note:"Fancy Pink · Argyle-style" },
+  { id:"diamond_red",    label:"Red",    color:"#e53935",
+    gradient:"radial-gradient(circle at 35% 35%,#ef9a9a,#b71c1c)",
+    mult:5.00, note:"Fancy Red · extremely rare" },
+];
+const DCOLOR_MULT = Object.fromEntries(DIAMOND_COLORS.map(d => [d.id, d.mult]));
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  METAL FAMILIES
+// ─────────────────────────────────────────────────────────────────────────────
 const METALS = [
-  { id: "yellow_gold", label: "Yellow Gold", color: "#c9a84c", gradient: "radial-gradient(circle at 35% 35%,#e8c96a,#8a6d2a)" },
-  { id: "white_gold",  label: "White Gold",  color: "#c8c8c8", gradient: "radial-gradient(circle at 35% 35%,#e8e8e8,#909090)" },
-  { id: "rose_gold",   label: "Rose Gold",   color: "#b5634d", gradient: "radial-gradient(circle at 35% 35%,#d4836a,#7a3525)" },
-  { id: "platinum",    label: "Platinum",    color: "#9fa8b0", gradient: "radial-gradient(circle at 35% 35%,#c0ccd4,#6a7880)" },
+  { id:"gold",     label:"Gold",     color:"#c9a84c",
+    gradient:"radial-gradient(circle at 35% 35%,#f0d060,#8a6d2a)",
+    karats:[
+      { id:"gold_24k",  karat:"24K",        purity:1.000, color:"#FFD700" },
+      { id:"gold_22k",  karat:"22K",        purity:0.917, color:"#e8c84a" },
+      { id:"gold_18k",  karat:"18K",        purity:0.750, color:"#c9a84c" },
+      { id:"gold_14k",  karat:"14K",        purity:0.585, color:"#b8932a" },
+    ],
+  },
+  { id:"silver",   label:"Silver",   color:"#c0c0c0",
+    gradient:"radial-gradient(circle at 35% 35%,#e8e8e8,#808080)",
+    karats:[
+      { id:"silver_999", karat:"999",        purity:0.999, color:"#e8e8e8" },
+      { id:"silver_925", karat:"Sterling 925",purity:0.925, color:"#c0c0c0" },
+      { id:"silver_800", karat:"800",        purity:0.800, color:"#a8a8a8" },
+    ],
+  },
+  { id:"copper",   label:"Copper",   color:"#b87333",
+    gradient:"radial-gradient(circle at 35% 35%,#d4936a,#7a4520)",
+    karats:[
+      { id:"copper_pure", karat:"Pure",       purity:0.999, color:"#b87333" },
+      { id:"copper_rose", karat:"Rose Alloy", purity:0.750, color:"#c5745a" },
+    ],
+  },
+  { id:"platinum", label:"Platinum", color:"#9fa8b0",
+    gradient:"radial-gradient(circle at 35% 35%,#d0dce4,#5a6870)",
+    karats:[
+      { id:"platinum_950", karat:"Pt 950", purity:0.950, color:"#c0ccd4" },
+      { id:"platinum_900", karat:"Pt 900", purity:0.900, color:"#b0bcc4" },
+    ],
+  },
 ];
 
+const KARAT_LOOKUP = {};
+METALS.forEach(fam => fam.karats.forEach(k => {
+  KARAT_LOOKUP[k.id] = { ...k, family:fam.id, familyLabel:fam.label, gradient:fam.gradient };
+}));
+Object.assign(KARAT_LOOKUP, {
+  yellow_gold: { ...KARAT_LOOKUP.gold_22k },
+  rose_gold:   { ...KARAT_LOOKUP.gold_22k,  color:"#c5745a", karat:"22K Rose" },
+  white_gold:  { ...KARAT_LOOKUP.gold_18k,  color:"#e0e0e0", karat:"18K White" },
+  platinum:    { ...KARAT_LOOKUP.platinum_950 },
+});
+
+// Reference PPG for each metal family (pure 100%)
+const REF_PPG = { gold:9770, silver:105, copper:0.9, platinum:3200 };
+const REF_DENSITY = { gold:19.32, silver:10.49, copper:8.96, platinum:21.45 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  GEMS
+// ─────────────────────────────────────────────────────────────────────────────
 const GEMS = [
-  { id: "diamond",  label: "Diamond",  color: "#d6eaf8" },
-  { id: "ruby",     label: "Ruby",     color: "#c0392b" },
-  { id: "sapphire", label: "Sapphire", color: "#2471a3" },
-  { id: "emerald",  label: "Emerald",  color: "#1e8449" },
-  { id: "amethyst", label: "Amethyst", color: "#7d3c98" },
-  { id: "topaz",    label: "Topaz",    color: "#e67e22" },
-  { id: "opal",     label: "Opal",     color: "#a8d8ea" },
-  { id: "pearl",    label: "Pearl",    color: "#f5f0e8" },
+  { id:"diamond",  label:"Diamond",  color:"#d6eaf8" },
+  { id:"ruby",     label:"Ruby",     color:"#c0392b" },
+  { id:"sapphire", label:"Sapphire", color:"#2471a3" },
+  { id:"emerald",  label:"Emerald",  color:"#1e8449" },
+  { id:"amethyst", label:"Amethyst", color:"#7d3c98" },
+  { id:"topaz",    label:"Topaz",    color:"#e67e22" },
+  { id:"opal",     label:"Opal",     color:"#a8d8ea" },
+  { id:"pearl",    label:"Pearl",    color:"#f5f0e8" },
 ];
+
+// Reference price per carat
+const REF_PPC = {
+  diamond:475000, ruby:95000, sapphire:65000, emerald:72000,
+  amethyst:1200,  topaz:1600, opal:12000, pearl:10000,
+};
+
+const CUT_MULT = {
+  round_brilliant:1.000, princess:0.863, oval:0.884,
+  emerald_cut:0.811,     cushion:0.821,  pear:0.853,
+};
 
 const CUTS = [
-  { id: "round_brilliant", label: "Round",    icon: "◯" },
-  { id: "princess",        label: "Princess", icon: "◻" },
-  { id: "oval",            label: "Oval",     icon: "⬭" },
-  { id: "emerald_cut",     label: "Emerald",  icon: "▬" },
-  { id: "pear",            label: "Pear",     icon: "⬟" },
-  { id: "cushion",         label: "Cushion",  icon: "⬜" },
+  { id:"round_brilliant", label:"Round",    icon:"◯" },
+  { id:"princess",        label:"Princess", icon:"◻" },
+  { id:"oval",            label:"Oval",     icon:"⬭" },
+  { id:"emerald_cut",     label:"Emerald",  icon:"▬" },
+  { id:"pear",            label:"Pear",     icon:"⬟" },
+  { id:"cushion",         label:"Cushion",  icon:"⬜" },
 ];
 
 const SETTING_STYLES = [
-  { id: "prong",   label: "Prong",   icon: "⋮" },
-  { id: "bezel",   label: "Bezel",   icon: "⬜" },
-  { id: "pave",    label: "Pavé",    icon: "⁙" },
-  { id: "channel", label: "Channel", icon: "⊟" },
-  { id: "tension", label: "Tension", icon: "⊏" },
-  { id: "flush",   label: "Flush",   icon: "▣" },
+  { id:"prong",  label:"Prong",  icon:"⋮" },
+  { id:"bezel",  label:"Bezel",  icon:"⬜" },
+  { id:"pave",   label:"Pavé",   icon:"⁙" },
+  { id:"channel",label:"Channel",icon:"⊟" },
+  { id:"tension",label:"Tension",icon:"⊏" },
+  { id:"flush",  label:"Flush",  icon:"▣" },
 ];
 
-const BAND_PROFILES = ["Round", "Flat", "Knife Edge", "Comfort Fit"];
+const BAND_PROFILES = ["Round","Flat","Knife Edge","Comfort Fit"];
 const RING_SIZES    = ["5","5.5","6","6.5","7","7.5","8","8.5","9"];
 const CARAT_SIZES   = ["0.25ct","0.5ct","0.75ct","1ct","1.5ct","2ct","3ct"];
+const CARAT_MAP     = { "0.25ct":0.25,"0.5ct":0.5,"0.75ct":0.75,"1ct":1,"1.5ct":1.5,"2ct":2,"3ct":3 };
 
-function isGemType(type) {
-  return ["gem","diamond","stone","gemstone","center_stone","center stone"]
-    .includes((type||"").toLowerCase().trim());
+const MAKING_REF = {
+  band:3500, ring:3500, shank:3500,
+  prong:1500, prongs:1500, setting:1800, basket:1800, bezel:1800, halo:2500,
+  gem:2200, gemstone:2200, stone:2200, center_stone:2200, "center stone":2200, diamond:2200,
+  ruby:2200, sapphire:2200, emerald:2200, amethyst:2200, topaz:2200, opal:2200, pearl:2200,
+};
+
+const GEM_CTYPES  = new Set(["gem","gemstone","stone","center_stone","center stone",
+  "diamond","ruby","sapphire","emerald","amethyst","topaz","opal","pearl"]);
+const METAL_CTYPES = new Set(["band","ring","shank","prong","prongs","setting","basket","bezel","halo"]);
+
+function isGemComp(type)   { return GEM_CTYPES.has((type||"").toLowerCase().trim()); }
+function isMetalComp(type) { return METAL_CTYPES.has((type||"").toLowerCase().trim()); }
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Format INR
+// ─────────────────────────────────────────────────────────────────────────────
+function fmtINR(n) {
+  if (!n || isNaN(n)) return "₹0";
+  n = Math.round(n);
+  if (n >= 10000000) return `₹${(n/10000000).toFixed(2)} Cr`;
+  if (n >= 100000)   return `₹${(n/100000).toFixed(2)} L`;
+  return `₹${n.toLocaleString("en-IN")}`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Styles
+//  LOCAL reference estimate — used for immediate display while API is in-flight
+//  IMPORTANT: reads from comp.materialOverrides + comp.geometry directly
 // ─────────────────────────────────────────────────────────────────────────────
+function localEstimate(comp) {
+  if (!comp) return 0;
+  const ctype   = (comp.type || "").toLowerCase().trim();
+  const ov      = comp.materialOverrides || {};
+  const geo     = comp.geometry || {};
 
+  const karatId    = ov.metalType    || "gold_22k";
+  const gemType    = ov.gemType      || "diamond";
+  const dColor     = ov.diamondColor || "diamond_white";
+  const caratStr   = geo.caratSize   || "1ct";
+  const cutId      = geo.cut         || "round_brilliant";
+  const bandW      = parseFloat(geo.bandWidth || 2.5);
+
+  let total = 0;
+
+  if (isMetalComp(ctype)) {
+    const k       = KARAT_LOOKUP[karatId] || KARAT_LOOKUP["gold_22k"];
+    const fam     = k.family || "gold";
+    const ppg     = Math.round((REF_PPG[fam]    || 9770) * k.purity);
+    const density =            REF_DENSITY[fam] || 19.32;
+    const ringR   = 9.5, tubeR = (bandW / 2) * 0.85;
+    const grams   = parseFloat(((2 * Math.PI ** 2 * ringR * tubeR ** 2 / 1000) * density).toFixed(2));
+    total += grams * ppg;
+  }
+
+  if (isGemComp(ctype)) {
+    const resolvedGem = (REF_PPC[gemType] ? gemType : (REF_PPC[ctype] ? ctype : "diamond"));
+    const carats      = CARAT_MAP[caratStr] || 1;
+    let ppc           = REF_PPC[resolvedGem] || REF_PPC.diamond;
+    if (resolvedGem === "diamond") {
+      ppc = Math.round(ppc * (CUT_MULT[cutId] || 1) * (DCOLOR_MULT[dColor] || 1));
+    }
+    total += carats * ppc;
+  }
+
+  total += MAKING_REF[ctype] || 1200;
+  return Math.round(total);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  usePriceAPI — calls Flask backend on every jewelryJSON change (400ms debounce)
+// ─────────────────────────────────────────────────────────────────────────────
+function usePriceAPI(jewelryJSON) {
+  const [state, setState] = useState({
+    data:null, loading:false, error:null, lastFetched:null, isBackend:false,
+  });
+  const timerRef = useRef(null);
+  const abortRef = useRef(null);
+
+  useEffect(() => {
+    const comps = jewelryJSON?.components;
+    if (!comps || comps.length === 0) return;
+
+    if (timerRef.current) clearTimeout(timerRef.current);
+
+    timerRef.current = setTimeout(async () => {
+      if (abortRef.current) abortRef.current.abort();
+      const ctrl = new AbortController();
+      abortRef.current = ctrl;
+
+      setState(p => ({ ...p, loading:true, error:null }));
+
+      try {
+        // ── Build payload — pass FULL component objects so backend has everything ──
+        const payload = {
+          model_id:   jewelryJSON?.id || "jewelry_model",
+          components: comps.map(c => ({
+            id:                c.id,
+            name:              c.name || c.id,
+            type:              c.type,
+            materialOverrides: {
+              metalType:    c.materialOverrides?.metalType    || "gold_22k",
+              gemType:      c.materialOverrides?.gemType      || "diamond",
+              diamondColor: c.materialOverrides?.diamondColor || "diamond_white",
+              color:        c.materialOverrides?.color        || "",
+            },
+            geometry: {
+              bandWidth:  c.geometry?.bandWidth  || 2.5,
+              caratSize:  c.geometry?.caratSize  || "1ct",
+              cut:        c.geometry?.cut        || "round_brilliant",
+              ringSize:   c.geometry?.ringSize   || "7",
+              profile:    c.geometry?.profile    || "Round",
+            },
+          })),
+        };
+
+        const res = await fetch(ESTIMATE_URL, {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify(payload),
+          signal:  ctrl.signal,
+        });
+
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+
+        setState({ data, loading:false, error:null, lastFetched:new Date(), isBackend:true });
+      } catch (err) {
+        if (err.name === "AbortError") return;
+        setState(p => ({ ...p, loading:false, error:err.message, isBackend:false }));
+      }
+    }, 400);
+
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, [jewelryJSON]);
+
+  return state;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Animated number
+// ─────────────────────────────────────────────────────────────────────────────
+function useAnimNum(target) {
+  const [disp, setDisp] = useState(target);
+  const prev = useRef(target);
+  useEffect(() => {
+    const s = prev.current, e = target;
+    if (s === e) return;
+    let f = 0;
+    const tick = () => {
+      f++;
+      const ease = 1 - Math.pow(1 - f / 20, 3);
+      setDisp(f >= 20 ? e : Math.round(s + (e - s) * ease));
+      if (f < 20) requestAnimationFrame(tick); else prev.current = e;
+    };
+    requestAnimationFrame(tick);
+  }, [target]);
+  return disp;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  PriceSummary
+// ─────────────────────────────────────────────────────────────────────────────
+function PriceSummary({ comp, jewelryJSON, apiState }) {
+  const { data, loading, error, lastFetched, isBackend } = apiState;
+  const comps = jewelryJSON?.components || [];
+
+  // Build per-component display rows — backend preferred, local fallback
+  const rows = isBackend && data
+    ? data.components.map(c => ({
+        id:c.id, name:c.name, isGem:c.is_gem,
+        total:c.total_inr, fmt:c.total_formatted,
+        weight:c.weight_grams, ppg:c.price_per_gram,
+        matLabel:c.material_label, breakdown:c.breakdown,
+      }))
+    : comps.map(c => ({
+        id:c.id, name:c.name||c.id, isGem:isGemComp(c.type),
+        total:localEstimate(c), fmt:"", weight:0, ppg:0,
+        matLabel:"", breakdown:[],
+      }));
+
+  const totalINR    = isBackend && data ? data.grand_total_inr    : rows.reduce((s,r) => s+r.total, 0);
+  const totalWeight = isBackend && data ? data.total_weight_grams : 0;
+  const blendedPPG  = isBackend && data ? data.blended_price_per_gram : 0;
+
+  // Selected component detail
+  const selRow   = comp ? rows.find(r => r.id === comp.id) : null;
+  const selTotal = selRow?.total  || (comp ? localEstimate(comp) : 0);
+  const selPPG   = selRow?.ppg    || 0;
+
+  const aTot = useAnimNum(totalINR);
+  const aPPG = useAnimNum(blendedPPG);
+  const aWt  = useAnimNum(Math.round(totalWeight * 100));
+  const aSPG = useAnimNum(selPPG);
+
+  return (
+    <div style={{ flexShrink:0, background:"linear-gradient(135deg,rgba(75,108,247,0.07),rgba(224,64,251,0.03))", borderBottom:"1px solid rgba(123,92,229,0.15)" }}>
+
+      {/* ── GRAND TOTAL ── */}
+      <div style={{ padding:"12px 14px 6px", display:"flex", alignItems:"flex-start", gap:"10px" }}>
+        <div style={{ width:36,height:36,borderRadius:10,flexShrink:0,background:T.grad,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,marginTop:1 }}>₹</div>
+        <div style={{ flex:1,minWidth:0 }}>
+          <div style={{ display:"flex",alignItems:"center",gap:6,marginBottom:2 }}>
+            <span style={{ fontSize:10,color:T.textDim,letterSpacing:"0.8px",textTransform:"uppercase" }}>Total Estimate · INR</span>
+            {loading
+              ? <div style={{ width:10,height:10,borderRadius:"50%",border:"1.5px solid rgba(123,92,229,0.3)",borderTopColor:T.accentLight,animation:"spin 0.8s linear infinite" }} />
+              : <div style={{ width:5,height:5,borderRadius:"50%",background:error?T.danger:T.success,boxShadow:`0 0 5px ${error?T.danger:T.success}` }} />
+            }
+          </div>
+          <div style={{ fontSize:24,fontWeight:800,fontFamily:"'Nunito',sans-serif",background:"linear-gradient(90deg,#4B6CF7,#9B59E8,#E040FB)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",backgroundClip:"text",lineHeight:1.1 }}>
+            {(isBackend && data) ? data.grand_total_formatted : fmtINR(aTot)}
+          </div>
+          <div style={{ fontSize:9,color:T.textDim,marginTop:2 }}>
+            {loading ? "Calling price API…"
+              : error   ? `⚠ Local estimate only (${error})`
+              : isBackend ? `Flask API · ${lastFetched?.toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"})||""}`
+              : "Local reference estimate"}
+          </div>
+        </div>
+        {/* API / Local badge */}
+        <div style={{ padding:"3px 7px",borderRadius:5,fontSize:8,fontFamily:"monospace",flexShrink:0,
+          background:isBackend?"rgba(46,204,113,0.12)":"rgba(255,152,0,0.12)",
+          border:`1px solid ${isBackend?"rgba(46,204,113,0.3)":"rgba(255,152,0,0.3)"}`,
+          color:isBackend?T.success:"#FFA500" }}>
+          {isBackend ? "⬤ API" : "⬤ LOCAL"}
+        </div>
+      </div>
+
+      {/* ── METRICS ── */}
+      <div style={{ margin:"0 12px 8px",background:"rgba(123,92,229,0.06)",border:"1px solid rgba(123,92,229,0.18)",borderRadius:10,padding:"8px 12px",display:"grid",gridTemplateColumns:"1fr 1px 1fr 1px 1fr",alignItems:"center" }}>
+        {/* Total weight */}
+        <div style={{ textAlign:"center" }}>
+          <div style={{ fontSize:9,color:T.textDim,letterSpacing:"0.6px",textTransform:"uppercase",marginBottom:3 }}>Total Weight</div>
+          <div style={{ fontSize:15,fontWeight:700,fontFamily:"'Nunito',sans-serif",color:T.accentLight }}>{(aWt/100).toFixed(2)}g</div>
+          <div style={{ fontSize:8,color:T.textDim }}>metal only</div>
+        </div>
+        <div style={{ width:1,height:36,background:"rgba(123,92,229,0.2)",margin:"0 auto" }} />
+        {/* Blended ₹/g */}
+        <div style={{ textAlign:"center" }}>
+          <div style={{ fontSize:9,color:T.textDim,letterSpacing:"0.6px",textTransform:"uppercase",marginBottom:3 }}>Blended ₹/g</div>
+          <div style={{ fontSize:15,fontWeight:700,fontFamily:"'Nunito',sans-serif",background:"linear-gradient(90deg,#4B6CF7,#E040FB)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",backgroundClip:"text" }}>{fmtINR(aPPG)}</div>
+          <div style={{ fontSize:8,color:T.textDim }}>weighted avg</div>
+        </div>
+        <div style={{ width:1,height:36,background:"rgba(123,92,229,0.2)",margin:"0 auto" }} />
+        {/* Selected */}
+        <div style={{ textAlign:"center" }}>
+          <div style={{ fontSize:9,color:T.textDim,letterSpacing:"0.6px",textTransform:"uppercase",marginBottom:3 }}>
+            {comp && !isGemComp(comp.type) ? "Selected ₹/g" : "Selected Cost"}
+          </div>
+          <div style={{ fontSize:15,fontWeight:700,fontFamily:"'Nunito',sans-serif",color:selTotal>0?"#9d80f0":T.textDim }}>
+            {comp && !isGemComp(comp.type) && selPPG > 0 ? fmtINR(aSPG)
+              : comp ? fmtINR(selTotal)
+              : "—"}
+          </div>
+          <div style={{ fontSize:8,color:T.textDim }}>
+            {selRow && !isGemComp(comp?.type) && selRow.weight > 0 ? `${selRow.weight.toFixed(2)}g`
+              : comp ? "est." : "select part"}
+          </div>
+        </div>
+      </div>
+
+      {/* ── COMPONENT PILLS ── */}
+      {rows.length > 0 && (
+        <div style={{ padding:"0 12px 6px",display:"flex",gap:4,flexWrap:"wrap" }}>
+          {rows.map(r => (
+            <div key={r.id} style={{ padding:"2px 8px",borderRadius:10,fontSize:9,fontFamily:"monospace",
+              background:r.isGem?"rgba(75,108,247,0.14)":"rgba(155,89,232,0.14)",
+              border:`1px solid ${r.isGem?"rgba(75,108,247,0.3)":"rgba(155,89,232,0.3)"}`,
+              color:r.isGem?"#7b9ff9":T.accentLight }}>
+              {(r.name||"").split("_")[0]} · {r.fmt || fmtINR(r.total)}
+              {!r.isGem && r.weight > 0 && <span style={{ color:T.textDim,marginLeft:3 }}>({r.weight.toFixed(1)}g)</span>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── COST BAR ── */}
+      {totalINR > 0 && (
+        <div style={{ padding:"0 12px 8px",display:"flex",gap:2,height:5 }}>
+          {rows.map(r => (
+            <div key={r.id} title={`${r.name}: ${fmtINR(r.total)}`}
+              style={{ height:5,borderRadius:3,minWidth:4,width:`${(r.total/totalINR)*100}%`,
+                background:r.isGem?"linear-gradient(90deg,#4B6CF7,#9B59E8)":"linear-gradient(90deg,#9B59E8,#E040FB)",
+                transition:"width 0.5s ease" }} />
+          ))}
+        </div>
+      )}
+
+      {/* ── SELECTED COMPONENT BREAKDOWN (backend) ── */}
+      {selRow && selRow.breakdown.length > 0 && comp && (
+        <div style={{ margin:"0 10px 10px",background:T.bg2,borderRadius:10,border:"1px solid rgba(123,92,229,0.16)",overflow:"hidden" }}>
+          <div style={{ padding:"8px 12px",background:"linear-gradient(90deg,rgba(123,92,229,0.12),transparent)",borderBottom:"1px solid rgba(123,92,229,0.1)",display:"flex",alignItems:"center",justifyContent:"space-between" }}>
+            <div style={{ fontSize:11,color:T.accentLight,fontWeight:600 }}>
+              {comp.name||comp.id}
+              <span style={{ fontWeight:400,color:T.textDim,marginLeft:5 }}>{selRow.matLabel}</span>
+              {!isGemComp(comp.type) && selRow.weight > 0 && (
+                <span style={{ marginLeft:6,fontSize:9,fontFamily:"monospace",background:"rgba(123,92,229,0.15)",padding:"1px 5px",borderRadius:4,color:T.textSub }}>
+                  {selRow.weight.toFixed(2)}g · {fmtINR(selRow.ppg)}/g
+                </span>
+              )}
+            </div>
+            <div style={{ fontSize:15,fontWeight:800,fontFamily:"'Nunito',sans-serif",background:"linear-gradient(90deg,#4B6CF7,#E040FB)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",backgroundClip:"text" }}>
+              {selRow.fmt || fmtINR(selRow.total)}
+            </div>
+          </div>
+          {selRow.breakdown.map((ln, i) => (
+            <div key={i} style={{ padding:"8px 12px",
+              background:ln.line_type==="metal"?"rgba(201,168,76,0.08)":ln.line_type==="gem"?"rgba(75,108,247,0.07)":"transparent",
+              borderBottom:i<selRow.breakdown.length-1?"1px solid rgba(255,255,255,0.04)":"none" }}>
+              <div style={{ display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8 }}>
+                <div style={{ flex:1 }}>
+                  <div style={{ display:"flex",alignItems:"center",gap:5,marginBottom:2 }}>
+                    <div style={{ width:6,height:6,borderRadius:"50%",flexShrink:0,
+                      background:ln.line_type==="metal"?"#c9a84c":ln.line_type==="gem"?"#7b9ff9":T.textDim }} />
+                    <div style={{ fontSize:12,color:T.text,fontWeight:500 }}>{ln.label}</div>
+                  </div>
+                  {ln.sub   && <div style={{ fontSize:10,color:T.textDim,paddingLeft:11 }}>{ln.sub}</div>}
+                  {ln.range && <div style={{ fontSize:9,color:T.accentLight,paddingLeft:11,marginTop:2 }}>{ln.range}</div>}
+                </div>
+                <div style={{ fontSize:13,fontWeight:700,color:T.text,background:"rgba(123,92,229,0.12)",padding:"3px 10px",borderRadius:6,whiteSpace:"nowrap" }}>
+                  {ln.formatted || fmtINR(ln.amount_inr)}
+                </div>
+              </div>
+              {ln.source && (
+                <div style={{ marginTop:5,fontSize:"8.5px",color:T.textDim,background:"rgba(75,108,247,0.06)",border:"1px solid rgba(75,108,247,0.12)",borderRadius:4,padding:"1px 7px",display:"inline-block" }}>
+                  {ln.source}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── LOCAL FALLBACK: show local breakdown when API unavailable ── */}
+      {(!selRow || selRow.breakdown.length === 0) && comp && (
+        <div style={{ margin:"0 10px 10px",background:T.bg2,borderRadius:10,border:"1px solid rgba(123,92,229,0.12)",overflow:"hidden" }}>
+          <div style={{ padding:"8px 12px",background:"rgba(255,152,0,0.05)",borderBottom:"1px solid rgba(123,92,229,0.1)",display:"flex",alignItems:"center",justifyContent:"space-between" }}>
+            <div style={{ fontSize:11,color:"#FFA500",fontWeight:500 }}>
+              {comp.name||comp.id}
+              <span style={{ marginLeft:6,fontSize:9,color:T.textDim }}>(local estimate)</span>
+            </div>
+            <div style={{ fontSize:14,fontWeight:700,color:"#FFA500" }}>{fmtINR(localEstimate(comp))}</div>
+          </div>
+          <div style={{ padding:"8px 12px" }}>
+            <div style={{ fontSize:10,color:T.textDim }}>
+              Waiting for Flask API response…<br />
+              <span style={{ fontSize:9 }}>Make sure <code>python app.py</code> is running on port 5000.</span>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Styles object
+// ─────────────────────────────────────────────────────────────────────────────
 const S = {
-  panel: {
-    width: "290px", background: T.bg1, color: T.text,
-    display: "flex", flexDirection: "column",
-    fontFamily: "'DM Sans',sans-serif",
-    borderLeft: "1px solid rgba(123,92,229,0.12)",
-    overflow: "hidden", flexShrink: 0,
-  },
-  tabRow: {
-    display: "flex",
-    borderBottom: "1px solid rgba(123,92,229,0.1)",
-    flexShrink: 0,
-  },
-  tabBtn: (a) => ({
-    flex: 1, padding: "10px 4px", fontSize: "11px",
-    color: a ? T.accentLight : T.textDim,
-    cursor: "pointer", border: "none", background: "none",
-    fontFamily: "'DM Sans',sans-serif",
-    borderBottom: a ? `2px solid ${T.accent}` : "2px solid transparent",
-    transition: "all 0.2s",
-    background: a ? "rgba(75,108,247,0.05)" : "none",
-  }),
-  selBanner: {
-    padding: "8px 14px",
-    background: "linear-gradient(90deg,rgba(75,108,247,0.1),rgba(224,64,251,0.05))",
-    borderBottom: "1px solid rgba(123,92,229,0.15)",
-    display: "flex", alignItems: "center", gap: "8px", flexShrink: 0,
-  },
-  selDot: {
-    width: "7px", height: "7px", borderRadius: "50%",
-    background: T.accent, boxShadow: `0 0 7px ${T.accent}`,
-    animation: "pulse 2s infinite",
-  },
-  selName: { fontSize: "12px", color: T.accentLight, fontWeight: 500 },
-  selType: { fontSize: "10px", color: T.textDim, marginLeft: "auto" },
-  body: {
-    flex: 1, overflowY: "auto", padding: "12px 14px 20px",
-    scrollbarWidth: "thin", scrollbarColor: `${T.bg4} transparent`,
-  },
-  secTitle: {
-    fontSize: "10px", letterSpacing: "1.2px", color: T.textDim,
-    textTransform: "uppercase", margin: "14px 0 9px",
-    display: "flex", alignItems: "center", gap: "8px",
-  },
-  secLine: { flex: 1, height: "1px", background: "rgba(123,92,229,0.1)" },
-
-  // ── Transform card ──
-  xyzCard: {
-    background: T.bg2, borderRadius: "10px",
-    border: "1px solid rgba(123,92,229,0.15)",
-    padding: "10px 12px", marginBottom: "4px",
-  },
-  xyzRow: { display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" },
-  xyzBadge: (color) => ({
-    width: "20px", height: "20px", borderRadius: "5px",
-    background: color + "22", border: `1px solid ${color}55`,
-    display: "flex", alignItems: "center", justifyContent: "center",
-    fontSize: "10px", fontWeight: 700, color, flexShrink: 0,
-  }),
-  xyzSlider: (color, pct) => ({
-    flex: 1, WebkitAppearance: "none", appearance: "none",
-    height: "3px", borderRadius: "2px", outline: "none", cursor: "pointer",
-    background: `linear-gradient(to right,${color} ${pct}%,#1f1f32 ${pct}%)`,
-  }),
-  xyzInput: {
-    width: "52px", background: T.bg0,
-    border: `1px solid rgba(123,92,229,0.3)`, borderRadius: "5px",
-    padding: "3px 6px", color: T.accentLight, fontSize: "10px",
-    fontFamily: "monospace", outline: "none", textAlign: "right", flexShrink: 0,
-  },
-  xyzReset: {
-    fontSize: "9px", color: T.textDim, cursor: "pointer",
-    padding: "3px 7px", borderRadius: "4px",
-    border: "1px solid rgba(123,92,229,0.15)",
-    background: "none", fontFamily: "'DM Sans',sans-serif",
-    marginTop: "4px", alignSelf: "flex-end",
-  },
-
-  // ── Metal / Gem grids ──
-  metalGrid: { display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "6px", marginBottom: "2px" },
-  metalOpt: (a) => ({
-    padding: "8px 4px", borderRadius: "9px", cursor: "pointer",
-    border: a ? `1px solid ${T.accent}` : "1px solid rgba(123,92,229,0.1)",
-    background: a ? "rgba(75,108,247,0.1)" : T.bg2,
-    display: "flex", flexDirection: "column", alignItems: "center", gap: "5px",
-    transition: "all 0.2s",
-    boxShadow: a ? `0 0 8px rgba(123,92,229,0.2)` : "none",
-  }),
-  metalSwatch: (g) => ({
-    width: "28px", height: "28px", borderRadius: "50%", background: g,
-    border: "2px solid rgba(255,255,255,0.1)", boxShadow: "0 2px 6px rgba(0,0,0,0.4)",
-  }),
-  metalLabel: (a) => ({ fontSize: "8.5px", color: a ? T.accentLight : T.textDim, textAlign: "center", lineHeight: 1.25 }),
-
-  gemGrid: { display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "6px", marginBottom: "2px" },
-  gemOpt: (a) => ({
-    padding: "8px 4px", borderRadius: "9px", cursor: "pointer",
-    border: a ? `1px solid ${T.accent}` : "1px solid rgba(123,92,229,0.1)",
-    background: a ? "rgba(75,108,247,0.1)" : T.bg2,
-    display: "flex", flexDirection: "column", alignItems: "center", gap: "5px",
-    transition: "all 0.2s",
-    boxShadow: a ? `0 0 8px rgba(123,92,229,0.2)` : "none",
-  }),
-  gemShape: (color) => ({
-    width: "26px", height: "26px",
-    clipPath: "polygon(50% 0%,100% 38%,82% 100%,18% 100%,0% 38%)",
-    background: color, boxShadow: `0 0 8px ${color}66`,
-  }),
-  gemLabel: (a) => ({ fontSize: "8.5px", color: a ? T.accentLight : T.textDim, textAlign: "center" }),
-
-  cutGrid: { display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "5px", marginBottom: "4px" },
-  cutOpt: (a) => ({
-    padding: "7px 4px", borderRadius: "7px", cursor: "pointer",
-    border: a ? `1px solid ${T.accent}` : "1px solid rgba(123,92,229,0.1)",
-    background: a ? "rgba(75,108,247,0.1)" : T.bg2,
-    display: "flex", flexDirection: "column", alignItems: "center", gap: "3px",
-    transition: "all 0.2s",
-  }),
-  cutIcon:  { fontSize: "13px", color: T.textSub },
-  cutLabel: (a) => ({ fontSize: "8.5px", color: a ? T.accentLight : T.textDim }),
-
-  slRow:   { display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px" },
-  slLabel: { fontSize: "11px", color: T.textSub, width: "68px", flexShrink: 0 },
-  slVal:   { fontSize: "11px", color: T.accentLight, width: "36px", textAlign: "right", flexShrink: 0, fontWeight: 500 },
-
-  tagRow: { display: "flex", gap: "5px", flexWrap: "wrap", marginBottom: "6px" },
-  tag: (a) => ({
-    padding: "4px 10px", borderRadius: "5px", cursor: "pointer",
-    border: a ? `1px solid ${T.accent}` : "1px solid rgba(123,92,229,0.1)",
-    background: a ? "rgba(75,108,247,0.1)" : T.bg2,
-    fontSize: "11px", color: a ? T.accentLight : T.textDim,
-    transition: "all 0.2s",
-  }),
-
-  prongRow: { display: "flex", alignItems: "center", gap: "12px", marginBottom: "12px" },
-  prongCtr: { display: "flex", alignItems: "center", gap: "8px" },
-  pcBtn: {
-    width: "26px", height: "26px", borderRadius: "7px",
-    background: T.bg2, border: "1px solid rgba(123,92,229,0.2)",
-    color: T.textSub, cursor: "pointer", fontSize: "16px",
-    display: "flex", alignItems: "center", justifyContent: "center",
-    fontFamily: "'DM Sans',sans-serif", transition: "all 0.2s",
-  },
-  pCount: { fontSize: "18px", fontWeight: 600, color: T.text, minWidth: "20px", textAlign: "center" },
-  pDots:  { display: "flex", gap: "4px" },
-  pDot:   (a) => ({
-    width: "8px", height: "8px", borderRadius: "50%",
-    background: a ? T.accent : T.bg4,
-    transition: "background 0.2s",
-    boxShadow: a ? `0 0 5px ${T.accent}88` : "none",
-  }),
-
-  bandOpts: { display: "flex", gap: "5px", marginBottom: "8px" },
-  bandOpt: (a) => ({
-    flex: 1, padding: "7px 4px", borderRadius: "7px", cursor: "pointer",
-    border: a ? `1px solid ${T.accent}` : "1px solid rgba(123,92,229,0.1)",
-    background: a ? "rgba(75,108,247,0.1)" : T.bg2,
-    textAlign: "center", fontSize: "10px",
-    color: a ? T.accentLight : T.textDim, transition: "all 0.2s",
-  }),
-
-  actRow: { display: "flex", gap: "6px", marginTop: "18px" },
-  delBtn: {
-    flex: 1, padding: "9px", borderRadius: "8px",
-    background: "rgba(231,76,60,0.08)", border: "1px solid rgba(231,76,60,0.25)",
-    color: "#e74c3c", cursor: "pointer", fontSize: "12px",
-    fontFamily: "'DM Sans',sans-serif", transition: "all 0.2s",
-  },
-  saveBtn: {
-    flex: 2, padding: "9px", borderRadius: "8px",
-    background: "linear-gradient(135deg,rgba(75,108,247,0.2),rgba(155,89,232,0.2))",
-    border: `1px solid rgba(123,92,229,0.4)`,
-    color: T.accentLight, cursor: "pointer", fontSize: "12px",
-    fontFamily: "'DM Sans',sans-serif", fontWeight: 600, transition: "all 0.2s",
-  },
-  noSel: {
-    padding: "30px 20px", textAlign: "center",
-    color: T.textDim, fontSize: "12px", lineHeight: 1.7,
-  },
-
-  // ── AI panel ──
-  aiHeader: {
-    padding: "10px 14px", borderBottom: "1px solid rgba(123,92,229,0.1)",
-    display: "flex", alignItems: "center", gap: "8px", flexShrink: 0,
-    background: "linear-gradient(90deg,rgba(75,108,247,0.06),transparent)",
-  },
-  aiDot: {
-    width: "7px", height: "7px", borderRadius: "50%",
-    background: T.success, boxShadow: `0 0 6px ${T.success}`,
-  },
-  aiIntro: {
-    padding: "12px 14px", fontSize: "12px", color: T.textSub,
-    lineHeight: 1.6, borderBottom: "1px solid rgba(123,92,229,0.08)",
-  },
-  qaGrid: { display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "12px" },
-  qaBtn: (v) => ({
-    padding: "5px 10px", borderRadius: "7px", fontSize: "11px", cursor: "pointer",
-    fontFamily: "'DM Sans',sans-serif", transition: "all 0.2s",
-    border:
-      v === "rose" ? "1px solid rgba(224,64,251,0.3)" :
-      v === "blue" ? "1px solid rgba(75,108,247,0.3)" :
-                     "1px solid rgba(123,92,229,0.2)",
-    background:
-      v === "rose" ? "rgba(224,64,251,0.07)" :
-      v === "blue" ? "rgba(75,108,247,0.07)" :
-                     "rgba(123,92,229,0.05)",
-    color:
-      v === "rose" ? "#e080f5" :
-      v === "blue" ? "#7b9ff9" :
-                     T.textSub,
-  }),
-  engrRow: { display: "flex", gap: "6px", marginBottom: "8px" },
-  engrInput: {
-    flex: 1, background: T.bg0,
-    border: "1px solid rgba(123,92,229,0.2)",
-    borderRadius: "7px", padding: "7px 10px", color: T.text,
-    fontSize: "12px", fontFamily: "'DM Sans',sans-serif", outline: "none",
-  },
-  addBtn: {
-    padding: "7px 12px",
-    background: "linear-gradient(135deg,rgba(75,108,247,0.15),rgba(155,89,232,0.15))",
-    border: `1px solid rgba(123,92,229,0.35)`,
-    borderRadius: "7px", color: T.accentLight,
-    fontSize: "11px", cursor: "pointer",
-    fontFamily: "'DM Sans',sans-serif", whiteSpace: "nowrap",
-  },
-  chatArea: {
-    padding: "10px 14px", borderTop: "1px solid rgba(123,92,229,0.1)",
-    display: "flex", gap: "6px", alignItems: "flex-end", flexShrink: 0,
-  },
-  chatInput: {
-    flex: 1, background: T.bg2,
-    border: "1px solid rgba(123,92,229,0.2)",
-    borderRadius: "9px", padding: "8px 10px", color: T.text,
-    fontSize: "12px", fontFamily: "'DM Sans',sans-serif",
-    outline: "none", resize: "none", minHeight: "36px", maxHeight: "80px",
-  },
-  sendBtn: {
-    width: "34px", height: "34px",
-    background: "linear-gradient(135deg,#4B6CF7,#9B59E8)",
-    border: "none", borderRadius: "9px", cursor: "pointer",
-    display: "flex", alignItems: "center", justifyContent: "center",
-    color: "#fff", flexShrink: 0, transition: "all 0.2s",
-    boxShadow: "0 2px 10px rgba(75,108,247,0.4)",
-  },
-  fontTag: (a) => ({
-    padding: "4px 10px", borderRadius: "5px", cursor: "pointer",
-    border: a ? `1px solid ${T.accent}` : "1px solid rgba(123,92,229,0.1)",
-    background: a ? "rgba(75,108,247,0.1)" : T.bg2,
-    fontSize: "11px", color: a ? T.accentLight : T.textDim,
-    fontFamily: "'DM Sans',sans-serif", transition: "all 0.2s",
-  }),
+  panel:{ width:290,background:T.bg1,color:T.text,display:"flex",flexDirection:"column",fontFamily:"'DM Sans',sans-serif",borderLeft:"1px solid rgba(123,92,229,0.12)",overflow:"hidden",flexShrink:0 },
+  tabRow:{ display:"flex",borderBottom:"1px solid rgba(123,92,229,0.1)",flexShrink:0 },
+  tabBtn:a=>({ flex:1,padding:"10px 4px",fontSize:11,cursor:"pointer",border:"none",fontFamily:"'DM Sans',sans-serif",color:a?T.accentLight:T.textDim,background:a?"rgba(75,108,247,0.05)":"none",borderBottom:a?`2px solid ${T.accent}`:"2px solid transparent",transition:"all 0.2s" }),
+  selBanner:{ padding:"7px 14px",background:"linear-gradient(90deg,rgba(75,108,247,0.1),rgba(224,64,251,0.05))",borderBottom:"1px solid rgba(123,92,229,0.15)",display:"flex",alignItems:"center",gap:8,flexShrink:0 },
+  selDot:{ width:7,height:7,borderRadius:"50%",background:T.accent,boxShadow:`0 0 7px ${T.accent}`,animation:"pulse 2s infinite" },
+  selName:{ fontSize:12,color:T.accentLight,fontWeight:500 },
+  selType:{ fontSize:10,color:T.textDim,marginLeft:"auto" },
+  body:{ flex:1,overflowY:"auto",padding:"10px 12px 20px",scrollbarWidth:"thin",scrollbarColor:`${T.bg4} transparent` },
+  sec:{ fontSize:9,letterSpacing:"1.3px",color:T.textDim,textTransform:"uppercase",margin:"12px 0 8px",display:"flex",alignItems:"center",gap:8 },
+  secLine:{ flex:1,height:1,background:"rgba(123,92,229,0.1)" },
+  xyzCard:{ background:T.bg2,borderRadius:10,border:"1px solid rgba(123,92,229,0.15)",padding:"10px 12px",marginBottom:4 },
+  xyzRow:{ display:"flex",alignItems:"center",gap:8,marginBottom:8 },
+  xyzBadge:c=>({ width:20,height:20,borderRadius:5,background:c+"22",border:`1px solid ${c}55`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,color:c,flexShrink:0 }),
+  xyzSlider:(c,p)=>({ flex:1,WebkitAppearance:"none",appearance:"none",height:3,borderRadius:2,outline:"none",cursor:"pointer",background:`linear-gradient(to right,${c} ${p}%,#1f1f32 ${p}%)` }),
+  xyzInput:{ width:52,background:T.bg0,border:`1px solid rgba(123,92,229,0.3)`,borderRadius:5,padding:"3px 6px",color:T.accentLight,fontSize:10,fontFamily:"monospace",outline:"none",textAlign:"right",flexShrink:0 },
+  xyzReset:{ fontSize:9,color:T.textDim,cursor:"pointer",padding:"3px 7px",borderRadius:4,border:"1px solid rgba(123,92,229,0.15)",background:"none",fontFamily:"'DM Sans',sans-serif",marginTop:4 },
+  mGrid:{ display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:5,marginBottom:6 },
+  mOpt:a=>({ padding:"8px 4px",borderRadius:9,cursor:"pointer",border:a?`1px solid ${T.accent}`:"1px solid rgba(123,92,229,0.1)",background:a?"rgba(75,108,247,0.1)":T.bg2,display:"flex",flexDirection:"column",alignItems:"center",gap:5,transition:"all 0.2s",boxShadow:a?"0 0 8px rgba(123,92,229,0.25)":"none" }),
+  mSwatch:g=>({ width:28,height:28,borderRadius:"50%",background:g,border:"2px solid rgba(255,255,255,0.12)",boxShadow:"0 2px 6px rgba(0,0,0,0.4)" }),
+  mLabel:a=>({ fontSize:9,color:a?T.accentLight:T.textDim,textAlign:"center",fontWeight:a?600:400 }),
+  kRow:{ display:"flex",gap:4,flexWrap:"wrap",marginBottom:6 },
+  kTag:(a,col)=>({ padding:"4px 9px",borderRadius:5,cursor:"pointer",border:a?`1px solid ${col||T.accent}`:"1px solid rgba(123,92,229,0.12)",background:a?"rgba(75,108,247,0.12)":T.bg2,fontSize:10,fontWeight:a?600:400,color:a?(col||T.accentLight):T.textDim,transition:"all 0.2s" }),
+  kPrice:{ fontSize:8,color:T.textDim,marginTop:1 },
+  dGrid:{ display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6,marginBottom:8 },
+  dOpt:(a,col)=>({ padding:"10px 4px 8px",borderRadius:10,cursor:"pointer",border:a?`2px solid ${col}`:"1px solid rgba(123,92,229,0.12)",background:a?`${col}18`:T.bg2,display:"flex",flexDirection:"column",alignItems:"center",gap:5,transition:"all 0.2s",boxShadow:a?`0 0 12px ${col}44`:"none" }),
+  dSwatch:(g,col,a)=>({ width:28,height:28,borderRadius:"50%",background:g,border:a?`2.5px solid ${col}`:"2px solid rgba(255,255,255,0.1)",boxShadow:a?`0 0 10px ${col}99,inset 0 0 6px rgba(255,255,255,0.3)`:"0 2px 6px rgba(0,0,0,0.4)",transition:"all 0.2s" }),
+  gGrid:{ display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:5,marginBottom:4 },
+  gOpt:a=>({ padding:"7px 3px",borderRadius:9,cursor:"pointer",border:a?`1px solid ${T.accent}`:"1px solid rgba(123,92,229,0.1)",background:a?"rgba(75,108,247,0.1)":T.bg2,display:"flex",flexDirection:"column",alignItems:"center",gap:4,transition:"all 0.2s",boxShadow:a?"0 0 8px rgba(123,92,229,0.2)":"none" }),
+  gem:col=>({ width:24,height:24,clipPath:"polygon(50% 0%,100% 38%,82% 100%,18% 100%,0% 38%)",background:col,boxShadow:`0 0 8px ${col}66` }),
+  gLabel:a=>({ fontSize:8,color:a?T.accentLight:T.textDim,textAlign:"center" }),
+  cGrid:{ display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:5,marginBottom:4 },
+  cOpt:a=>({ padding:"7px 4px",borderRadius:7,cursor:"pointer",border:a?`1px solid ${T.accent}`:"1px solid rgba(123,92,229,0.1)",background:a?"rgba(75,108,247,0.1)":T.bg2,display:"flex",flexDirection:"column",alignItems:"center",gap:3,transition:"all 0.2s" }),
+  slRow:{ display:"flex",alignItems:"center",gap:8,marginBottom:10 },
+  slLbl:{ fontSize:11,color:T.textSub,width:68,flexShrink:0 },
+  slVal:{ fontSize:11,color:T.accentLight,width:40,textAlign:"right",flexShrink:0,fontWeight:500 },
+  tagRow:{ display:"flex",gap:4,flexWrap:"wrap",marginBottom:6 },
+  tag:a=>({ padding:"4px 10px",borderRadius:5,cursor:"pointer",border:a?`1px solid ${T.accent}`:"1px solid rgba(123,92,229,0.1)",background:a?"rgba(75,108,247,0.1)":T.bg2,fontSize:11,color:a?T.accentLight:T.textDim,transition:"all 0.2s" }),
+  bOpts:{ display:"flex",gap:5,marginBottom:8 },
+  bOpt:a=>({ flex:1,padding:"7px 4px",borderRadius:7,cursor:"pointer",border:a?`1px solid ${T.accent}`:"1px solid rgba(123,92,229,0.1)",background:a?"rgba(75,108,247,0.1)":T.bg2,textAlign:"center",fontSize:10,color:a?T.accentLight:T.textDim,transition:"all 0.2s" }),
+  pCtr:{ display:"flex",alignItems:"center",gap:10,marginBottom:12 },
+  pcBtn:{ width:26,height:26,borderRadius:7,background:T.bg2,border:"1px solid rgba(123,92,229,0.2)",color:T.textSub,cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",justifyContent:"center" },
+  pCnt:{ fontSize:18,fontWeight:600,color:T.text,minWidth:20,textAlign:"center" },
+  pDots:{ display:"flex",gap:4 },
+  pDot:a=>({ width:8,height:8,borderRadius:"50%",background:a?T.accent:T.bg4,boxShadow:a?`0 0 5px ${T.accent}88`:"none",transition:"background 0.2s" }),
+  actRow:{ display:"flex",gap:6,marginTop:18 },
+  del:{ flex:1,padding:9,borderRadius:8,background:"rgba(231,76,60,0.08)",border:"1px solid rgba(231,76,60,0.25)",color:"#e74c3c",cursor:"pointer",fontSize:12 },
+  save:{ flex:2,padding:9,borderRadius:8,background:"linear-gradient(135deg,rgba(75,108,247,0.2),rgba(155,89,232,0.2))",border:`1px solid rgba(123,92,229,0.4)`,color:T.accentLight,cursor:"pointer",fontSize:12,fontWeight:600 },
+  noSel:{ padding:"30px 16px",textAlign:"center",color:T.textDim,fontSize:12,lineHeight:1.7 },
+  aiH:{ padding:"10px 14px",borderBottom:"1px solid rgba(123,92,229,0.1)",display:"flex",alignItems:"center",gap:8,flexShrink:0,background:"linear-gradient(90deg,rgba(75,108,247,0.06),transparent)" },
+  aiI:{ padding:"10px 14px",fontSize:12,color:T.textSub,lineHeight:1.6,borderBottom:"1px solid rgba(123,92,229,0.08)" },
+  eRow:{ display:"flex",gap:6,marginBottom:8 },
+  eIn:{ flex:1,background:T.bg0,border:"1px solid rgba(123,92,229,0.2)",borderRadius:7,padding:"7px 10px",color:T.text,fontSize:12,outline:"none" },
+  eAdd:{ padding:"7px 12px",background:"linear-gradient(135deg,rgba(75,108,247,0.15),rgba(155,89,232,0.15))",border:`1px solid rgba(123,92,229,0.35)`,borderRadius:7,color:T.accentLight,fontSize:11,cursor:"pointer",whiteSpace:"nowrap" },
+  chatArea:{ padding:"10px 14px",borderTop:"1px solid rgba(123,92,229,0.1)",display:"flex",gap:6,alignItems:"flex-end",flexShrink:0 },
+  chatIn:{ flex:1,background:T.bg2,border:"1px solid rgba(123,92,229,0.2)",borderRadius:9,padding:"8px 10px",color:T.text,fontSize:12,outline:"none",resize:"none",minHeight:36,maxHeight:80 },
+  sendBtn:{ width:34,height:34,background:"linear-gradient(135deg,#4B6CF7,#9B59E8)",border:"none",borderRadius:9,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",flexShrink:0,boxShadow:"0 2px 10px rgba(75,108,247,0.4)" },
+  fontTag:a=>({ padding:"4px 10px",borderRadius:5,cursor:"pointer",border:a?`1px solid ${T.accent}`:"1px solid rgba(123,92,229,0.1)",background:a?"rgba(75,108,247,0.1)":T.bg2,fontSize:11,color:a?T.accentLight:T.textDim }),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Atoms
 // ─────────────────────────────────────────────────────────────────────────────
-
-function SecTitle({ children }) {
-  return (
-    <div style={S.secTitle}>
-      {children}
-      <div style={S.secLine} />
-    </div>
-  );
+function Sec({ children }) {
+  return <div style={S.sec}>{children}<div style={S.secLine} /></div>;
 }
 
-function RangeSlider({ label, min, max, step, value, onChange, display }) {
-  const pct = Math.max(0, Math.min(100, ((value - min) / (max - min)) * 100));
+function Slider({ label, min, max, step, value, onChange, display }) {
+  const p = Math.max(0,Math.min(100,((value-min)/(max-min))*100));
   return (
     <div style={S.slRow}>
-      <div style={S.slLabel}>{label}</div>
-      <input
-        type="range" min={min} max={max} step={step} value={value}
-        onChange={(e) => onChange(parseFloat(e.target.value))}
-        style={{
-          flex: 1, WebkitAppearance: "none", appearance: "none",
-          height: "3px", borderRadius: "2px", outline: "none", cursor: "pointer",
-          background: `linear-gradient(to right,${T.accent} ${pct}%,${T.bg4} ${pct}%)`,
-        }}
-      />
-      <div style={S.slVal}>{display ?? value}</div>
+      <div style={S.slLbl}>{label}</div>
+      <input type="range" min={min} max={max} step={step} value={value}
+        onChange={e=>onChange(parseFloat(e.target.value))}
+        style={{ flex:1,WebkitAppearance:"none",appearance:"none",height:3,borderRadius:2,outline:"none",cursor:"pointer",background:`linear-gradient(to right,${T.accent} ${p}%,${T.bg4} ${p}%)` }} />
+      <div style={S.slVal}>{display??value}</div>
     </div>
   );
 }
 
-function MetalPicker({ value, onChange }) {
+// ─────────────────────────────────────────────────────────────────────────────
+//  DiamondColorPicker
+// ─────────────────────────────────────────────────────────────────────────────
+function DiamondColorPicker({ value, cut, onChange }) {
   return (
-    <div style={S.metalGrid}>
-      {METALS.map((m) => (
-        <div key={m.id} style={S.metalOpt(value === m.id)} onClick={() => onChange(m)}>
-          <div style={S.metalSwatch(m.gradient)} />
-          <div style={S.metalLabel(value === m.id)}>
-            {m.label.split(" ").map((w, i) => <div key={i}>{w}</div>)}
-          </div>
+    <div>
+      <div style={S.dGrid}>
+        {DIAMOND_COLORS.map(dc => {
+          const basePPC = REF_PPC.diamond * (CUT_MULT[cut||"round_brilliant"] || 1);
+          const ppc     = Math.round(basePPC * dc.mult);
+          const isAct   = value === dc.id;
+          return (
+            <div key={dc.id} style={S.dOpt(isAct, dc.color)} onClick={()=>onChange(dc.id, dc.color)}>
+              <div style={S.dSwatch(dc.gradient, dc.color, isAct)} />
+              <div style={{ fontSize:9,color:isAct?dc.color:T.textDim,textAlign:"center",fontWeight:isAct?700:400 }}>{dc.label}</div>
+              <div style={{ fontSize:7,color:T.textDim,fontFamily:"monospace",textAlign:"center" }}>
+                {dc.mult === 1 ? "base" : `×${dc.mult}`}
+              </div>
+              <div style={{ fontSize:7,color:isAct?dc.color+"bb":T.textDim,fontFamily:"monospace",textAlign:"center" }}>
+                {fmtINR(ppc)}/ct
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {DIAMOND_COLORS.find(d=>d.id===value) && (
+        <div style={{ fontSize:"8.5px",color:T.textDim,background:"rgba(75,108,247,0.06)",border:"1px solid rgba(75,108,247,0.1)",borderRadius:6,padding:"4px 8px",marginBottom:4 }}>
+          ✦ {DIAMOND_COLORS.find(d=>d.id===value).note}
         </div>
-      ))}
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  MetalPicker
+// ─────────────────────────────────────────────────────────────────────────────
+function MetalPicker({ value, onChange }) {
+  const k      = KARAT_LOOKUP[value] || KARAT_LOOKUP["gold_22k"];
+  const family = k.family || "gold";
+  const famObj = METALS.find(m=>m.id===family) || METALS[0];
+  const sel    = karat => onChange({ id:karat.id, color:karat.color, label:`${famObj.label} ${karat.karat}` });
+  return (
+    <div>
+      <div style={S.mGrid}>
+        {METALS.map(fam => (
+          <div key={fam.id} style={S.mOpt(family===fam.id)} onClick={()=>sel(fam.karats[1]||fam.karats[0])}>
+            <div style={S.mSwatch(fam.gradient)} />
+            <div style={S.mLabel(family===fam.id)}>{fam.label}</div>
+            <div style={{ fontSize:"7.5px",color:T.textDim,fontFamily:"monospace" }}>
+              {fmtINR(REF_PPG[fam.id]||0)}/g
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={S.kRow}>
+        {famObj.karats.map(karat => {
+          const ep  = Math.round((REF_PPG[famObj.id]||0) * karat.purity);
+          const act = (KARAT_LOOKUP[value]?.id || value) === karat.id;
+          return (
+            <div key={karat.id} style={S.kTag(act, karat.color)} onClick={()=>sel(karat)}>
+              {karat.karat}
+              <div style={S.kPrice}>{fmtINR(ep)}/g</div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -381,389 +647,328 @@ function MetalPicker({ value, onChange }) {
 // ─────────────────────────────────────────────────────────────────────────────
 //  TransformControls
 // ─────────────────────────────────────────────────────────────────────────────
-
-const AXIS = [
-  { key: "x", label: "X", color: "#e74c3c", min: -5, max: 5 },
-  { key: "y", label: "Y", color: "#2ecc71", min: -5, max: 5 },
-  { key: "z", label: "Z", color: "#3498db", min: -5, max: 5 },
+const AXES = [
+  { key:"x",label:"X",color:"#e74c3c",min:-5,max:5 },
+  { key:"y",label:"Y",color:"#2ecc71",min:-5,max:5 },
+  { key:"z",label:"Z",color:"#3498db",min:-5,max:5 },
 ];
 
 function TransformControls({ comp, onUpdate }) {
-  const pos   = comp.transform?.position || [0, 0, 0];
+  const pos   = comp.transform?.position || [0,0,0];
   const scale = comp.transform?.scale    ?? 1;
-  const scalePct = Math.max(0, Math.min(100, ((scale - 0.1) / 4.9) * 100));
-
-  const setAxis = (idx, val) => {
-    const np = [...pos]; np[idx] = val;
-    onUpdate("_position", np);
-  };
-
+  const sPct  = Math.max(0,Math.min(100,((scale-0.1)/4.9)*100));
+  const setAx = (i,v) => { const np=[...pos]; np[i]=v; onUpdate("_position",np); };
   return (
     <div style={S.xyzCard}>
-      {AXIS.map(({ key, color, label, min, max }, idx) => {
-        const v   = parseFloat((pos[idx] ?? 0).toFixed(2));
-        const pct = Math.max(0, Math.min(100, ((v - min) / (max - min)) * 100));
+      {AXES.map(({ key,color,label,min,max },i) => {
+        const v = parseFloat((pos[i]??0).toFixed(2));
+        const p = Math.max(0,Math.min(100,((v-min)/(max-min))*100));
         return (
           <div key={key} style={S.xyzRow}>
             <div style={S.xyzBadge(color)}>{label}</div>
             <input type="range" min={min} max={max} step={0.05} value={v}
-              onChange={(e) => setAxis(idx, parseFloat(e.target.value))}
-              style={S.xyzSlider(color, pct)} />
+              onChange={e=>setAx(i,parseFloat(e.target.value))} style={S.xyzSlider(color,p)} />
             <input type="number" value={v} step={0.05} min={min} max={max}
-              onChange={(e) => setAxis(idx, parseFloat(e.target.value) || 0)}
-              style={S.xyzInput} />
+              onChange={e=>setAx(i,parseFloat(e.target.value)||0)} style={S.xyzInput} />
           </div>
         );
       })}
-
-      {/* Scale */}
-      <div style={{ ...S.xyzRow, marginBottom: 0 }}>
-        <div style={{ ...S.xyzBadge(T.accent), fontSize: "8px" }}>SZ</div>
+      <div style={{ ...S.xyzRow,marginBottom:0 }}>
+        <div style={{ ...S.xyzBadge(T.accent),fontSize:8 }}>SZ</div>
         <input type="range" min={0.1} max={5} step={0.05} value={parseFloat(scale.toFixed(2))}
-          onChange={(e) => onUpdate("scale", parseFloat(e.target.value))}
-          style={S.xyzSlider(T.accent, scalePct)} />
+          onChange={e=>onUpdate("scale",parseFloat(e.target.value))} style={S.xyzSlider(T.accent,sPct)} />
         <input type="number" value={parseFloat(scale.toFixed(2))} step={0.05} min={0.1} max={5}
-          onChange={(e) => onUpdate("scale", parseFloat(e.target.value) || 1)}
-          style={S.xyzInput} />
+          onChange={e=>onUpdate("scale",parseFloat(e.target.value)||1)} style={S.xyzInput} />
       </div>
-
-      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "8px" }}>
-        <button style={S.xyzReset} onClick={() => { onUpdate("_position", [0,0,0]); onUpdate("scale", 1); }}>
-          ↺ Reset Transform
-        </button>
+      <div style={{ display:"flex",justifyContent:"flex-end",marginTop:8 }}>
+        <button style={S.xyzReset} onClick={()=>{onUpdate("_position",[0,0,0]);onUpdate("scale",1);}}>↺ Reset</button>
       </div>
     </div>
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Sub-panels
+//  BandControls
 // ─────────────────────────────────────────────────────────────────────────────
-
 function BandControls({ comp, onUpdate, onDelete, onSave }) {
-  const [metal,   setMetal]   = useState(comp.materialOverrides?.metalType || "yellow_gold");
-  const [width,   setWidth]   = useState(parseFloat(comp.geometry?.bandWidth) || 2.5);
-  const [profile, setProfile] = useState(comp.geometry?.profile || "Round");
-  const [size,    setSize]    = useState(comp.geometry?.ringSize || "7");
+  const [metal,setMetal]     = useState(comp.materialOverrides?.metalType || "gold_22k");
+  const [width,setWidth]     = useState(parseFloat(comp.geometry?.bandWidth) || 2.5);
+  const [profile,setProfile] = useState(comp.geometry?.profile || "Round");
+  const [size,setSize]       = useState(comp.geometry?.ringSize || "7");
 
   useEffect(() => {
-    setMetal(comp.materialOverrides?.metalType || "yellow_gold");
+    setMetal(comp.materialOverrides?.metalType || "gold_22k");
     setWidth(parseFloat(comp.geometry?.bandWidth) || 2.5);
     setProfile(comp.geometry?.profile || "Round");
     setSize(comp.geometry?.ringSize || "7");
-  }, [comp]);
+  }, [comp.id]); // eslint-disable-line
 
   return (
     <>
-      <SecTitle>Transform</SecTitle>
-      <TransformControls comp={comp} onUpdate={onUpdate} />
-      <SecTitle>Metal Type</SecTitle>
-      <MetalPicker value={metal} onChange={(m) => { setMetal(m.id); onUpdate("color", m.color); onUpdate("metalType", m.id); }} />
-      <SecTitle>Band Width</SecTitle>
-      <RangeSlider label="Width" min={1} max={6} step={0.5} value={width} display={`${width.toFixed(1)}mm`}
-        onChange={(v) => { setWidth(v); onUpdate("bandWidth", v); }} />
-      <SecTitle>Profile Style</SecTitle>
-      <div style={S.bandOpts}>
-        {BAND_PROFILES.map((p) => (
-          <div key={p} style={S.bandOpt(profile === p)} onClick={() => { setProfile(p); onUpdate("profile", p); }}>
-            {p.split(" ")[0]}
-          </div>
-        ))}
-      </div>
-      <SecTitle>Ring Size</SecTitle>
-      <div style={S.tagRow}>
-        {RING_SIZES.map((s) => (
-          <div key={s} style={S.tag(size === s)} onClick={() => { setSize(s); onUpdate("ringSize", s); }}>{s}</div>
-        ))}
-      </div>
-      <div style={S.actRow}>
-        <button style={S.delBtn} onClick={onDelete}>Delete</button>
-        <button style={S.saveBtn} onClick={onSave}>✓ Save Changes</button>
-      </div>
+      <Sec>Transform</Sec><TransformControls comp={comp} onUpdate={onUpdate} />
+      <Sec>Metal · Karat</Sec>
+      <MetalPicker value={metal} onChange={m=>{ setMetal(m.id); onUpdate("color",m.color); onUpdate("metalType",m.id); }} />
+      <Sec>Band Width</Sec>
+      <Slider label="Width" min={1} max={8} step={0.5} value={width} display={`${width.toFixed(1)}mm`}
+        onChange={v=>{ setWidth(v); onUpdate("bandWidth",v); }} />
+      <Sec>Profile</Sec>
+      <div style={S.bOpts}>{BAND_PROFILES.map(p=>
+        <div key={p} style={S.bOpt(profile===p)} onClick={()=>{ setProfile(p); onUpdate("profile",p); }}>{p.split(" ")[0]}</div>
+      )}</div>
+      <Sec>Ring Size</Sec>
+      <div style={S.tagRow}>{RING_SIZES.map(s=>
+        <div key={s} style={S.tag(size===s)} onClick={()=>{ setSize(s); onUpdate("ringSize",s); }}>{s}</div>
+      )}</div>
+      <div style={S.actRow}><button style={S.del} onClick={onDelete}>Delete</button><button style={S.save} onClick={onSave}>✓ Save</button></div>
     </>
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  GemControls — diamond gets colour picker; all gems update pricing live
+// ─────────────────────────────────────────────────────────────────────────────
 function GemControls({ comp, onUpdate, onDelete, onSave }) {
-  const [gem,   setGem]   = useState(comp.materialOverrides?.gemType  || "diamond");
-  const [cut,   setCut]   = useState(comp.geometry?.cut               || "round_brilliant");
-  const [carat, setCarat] = useState(comp.geometry?.caratSize         || "1ct");
+  const [gem,    setGem]    = useState(comp.materialOverrides?.gemType      || (isGemComp(comp.type) && REF_PPC[comp.type.toLowerCase()] ? comp.type.toLowerCase() : "diamond"));
+  const [cut,    setCut]    = useState(comp.geometry?.cut                   || "round_brilliant");
+  const [carat,  setCarat]  = useState(comp.geometry?.caratSize             || "1ct");
+  const [dColor, setDColor] = useState(comp.materialOverrides?.diamondColor || "diamond_white");
 
   useEffect(() => {
-    setGem(comp.materialOverrides?.gemType  || "diamond");
-    setCut(comp.geometry?.cut               || "round_brilliant");
-    setCarat(comp.geometry?.caratSize       || "1ct");
-  }, [comp]);
+    const g = comp.materialOverrides?.gemType || (isGemComp(comp.type) && REF_PPC[comp.type.toLowerCase()] ? comp.type.toLowerCase() : "diamond");
+    setGem(g);
+    setCut(comp.geometry?.cut         || "round_brilliant");
+    setCarat(comp.geometry?.caratSize || "1ct");
+    setDColor(comp.materialOverrides?.diamondColor || "diamond_white");
+  }, [comp.id]); // eslint-disable-line
+
+  const isDiamond = gem === "diamond";
+
+  // Live price-per-carat for the current selection
+  const livePPC = () => {
+    const base = REF_PPC[gem] || REF_PPC.diamond;
+    if (isDiamond) return Math.round(base * (CUT_MULT[cut]||1) * (DCOLOR_MULT[dColor]||1));
+    return base;
+  };
 
   return (
     <>
-      <SecTitle>Transform</SecTitle>
-      <TransformControls comp={comp} onUpdate={onUpdate} />
-      <SecTitle>Stone Type</SecTitle>
-      <div style={S.gemGrid}>
-        {GEMS.map((g) => (
-          <div key={g.id} style={S.gemOpt(gem === g.id)}
-            onClick={() => { setGem(g.id); onUpdate("color", g.color); onUpdate("gemType", g.id); }}>
-            <div style={S.gemShape(g.color)} />
-            <div style={S.gemLabel(gem === g.id)}>{g.label}</div>
+      <Sec>Transform</Sec><TransformControls comp={comp} onUpdate={onUpdate} />
+
+      <Sec>Stone Type</Sec>
+      <div style={S.gGrid}>
+        {GEMS.map(g => (
+          <div key={g.id} style={S.gOpt(gem===g.id)} onClick={()=>{
+            setGem(g.id);
+            onUpdate("color", g.color);
+            onUpdate("gemType", g.id);
+            if (g.id !== "diamond") onUpdate("diamondColor", null);
+          }}>
+            <div style={S.gem(g.color)} />
+            <div style={S.gLabel(gem===g.id)}>{g.label}</div>
+            <div style={{ fontSize:"7.5px",color:T.textDim,fontFamily:"monospace",textAlign:"center" }}>
+              {fmtINR(REF_PPC[g.id]||0)}/ct
+            </div>
           </div>
         ))}
       </div>
-      <SecTitle>Cut Style</SecTitle>
-      <div style={S.cutGrid}>
-        {CUTS.map((c) => (
-          <div key={c.id} style={S.cutOpt(cut === c.id)}
-            onClick={() => { setCut(c.id); onUpdate("cut", c.id); }}>
-            <div style={S.cutIcon}>{c.icon}</div>
-            <div style={S.cutLabel(cut === c.id)}>{c.label}</div>
-          </div>
-        ))}
+
+      {isDiamond && (
+        <>
+          <Sec>Diamond Colour</Sec>
+          <DiamondColorPicker value={dColor} cut={cut} onChange={(id,col)=>{
+            setDColor(id);
+            onUpdate("diamondColor", id);
+            onUpdate("color", col);
+          }} />
+        </>
+      )}
+
+      <Sec>Cut Style</Sec>
+      <div style={S.cGrid}>
+        {CUTS.map(c => {
+          const ppc = isDiamond
+            ? Math.round((REF_PPC.diamond) * (CUT_MULT[c.id]||1) * (DCOLOR_MULT[dColor]||1))
+            : REF_PPC[gem] || 0;
+          return (
+            <div key={c.id} style={S.cOpt(cut===c.id)} onClick={()=>{ setCut(c.id); onUpdate("cut",c.id); }}>
+              <div style={{ fontSize:14,color:T.textSub }}>{c.icon}</div>
+              <div style={{ fontSize:"8.5px",color:cut===c.id?T.accentLight:T.textDim }}>{c.label}</div>
+              <div style={{ fontSize:"7.5px",color:T.textDim,fontFamily:"monospace" }}>{fmtINR(ppc)}/ct</div>
+            </div>
+          );
+        })}
       </div>
-      <SecTitle>Carat Size</SecTitle>
+
+      <Sec>Carat Size</Sec>
       <div style={S.tagRow}>
-        {CARAT_SIZES.map((s) => (
-          <div key={s} style={S.tag(carat === s)} onClick={() => { setCarat(s); onUpdate("caratSize", s); }}>{s}</div>
-        ))}
+        {CARAT_SIZES.map(s => {
+          const ct  = CARAT_MAP[s] || 1;
+          const ppc = livePPC();
+          return (
+            <div key={s} style={{ ...S.tag(carat===s),display:"flex",flexDirection:"column",alignItems:"center",minWidth:46 }}
+              onClick={()=>{ setCarat(s); onUpdate("caratSize",s); }}>
+              <span>{s}</span>
+              <span style={{ fontSize:"7.5px",color:T.textDim,fontFamily:"monospace" }}>{fmtINR(ppc*ct)}</span>
+            </div>
+          );
+        })}
       </div>
-      <div style={S.actRow}>
-        <button style={S.delBtn} onClick={onDelete}>Delete</button>
-        <button style={S.saveBtn} onClick={onSave}>✓ Save Changes</button>
-      </div>
+      <div style={S.actRow}><button style={S.del} onClick={onDelete}>Delete</button><button style={S.save} onClick={onSave}>✓ Save</button></div>
     </>
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  ProngControls
+// ─────────────────────────────────────────────────────────────────────────────
 function ProngControls({ comp, onUpdate, onDelete, onSave }) {
-  const [count,     setCount]     = useState(comp.geometry?.prongCount || comp.geometry?.count || 4);
-  const [height,    setHeight]    = useState(parseFloat(comp.geometry?.prongHeight)    || 1.2);
-  const [thickness, setThickness] = useState(parseFloat(comp.geometry?.prongThickness) || 0.9);
-  const [metal,     setMetal]     = useState(comp.materialOverrides?.metalType || "yellow_gold");
-
-  useEffect(() => {
-    setCount(comp.geometry?.prongCount || comp.geometry?.count || 4);
-    setHeight(parseFloat(comp.geometry?.prongHeight) || 1.2);
-    setThickness(parseFloat(comp.geometry?.prongThickness) || 0.9);
-    setMetal(comp.materialOverrides?.metalType || "yellow_gold");
-  }, [comp]);
-
-  const changeCount = (d) => { const n = Math.max(2, Math.min(6, count + d)); setCount(n); onUpdate("prongCount", n); };
-
+  const [cnt,setCnt] = useState(comp.geometry?.prongCount||4);
+  const [h,  setH]   = useState(parseFloat(comp.geometry?.prongHeight)||1.2);
+  const [th, setTh]  = useState(parseFloat(comp.geometry?.prongThickness)||0.9);
+  const [m,  setM]   = useState(comp.materialOverrides?.metalType||"gold_22k");
+  useEffect(()=>{ setCnt(comp.geometry?.prongCount||4); setH(parseFloat(comp.geometry?.prongHeight)||1.2); setTh(parseFloat(comp.geometry?.prongThickness)||0.9); setM(comp.materialOverrides?.metalType||"gold_22k"); },[comp.id]); // eslint-disable-line
+  const chg=d=>{ const n=Math.max(2,Math.min(6,cnt+d)); setCnt(n); onUpdate("prongCount",n); };
   return (
     <>
-      <SecTitle>Transform</SecTitle>
-      <TransformControls comp={comp} onUpdate={onUpdate} />
-      <SecTitle>Prong Count</SecTitle>
-      <div style={S.prongRow}>
-        <div style={S.prongCtr}>
-          <button style={S.pcBtn} onClick={() => changeCount(-1)}>−</button>
-          <div style={S.pCount}>{count}</div>
-          <button style={S.pcBtn} onClick={() => changeCount(+1)}>+</button>
-        </div>
-        <div style={S.pDots}>
-          {[1,2,3,4,5,6].map((i) => <div key={i} style={S.pDot(i <= count)} />)}
-        </div>
+      <Sec>Transform</Sec><TransformControls comp={comp} onUpdate={onUpdate} />
+      <Sec>Prong Count</Sec>
+      <div style={S.pCtr}>
+        <button style={S.pcBtn} onClick={()=>chg(-1)}>−</button>
+        <div style={S.pCnt}>{cnt}</div>
+        <button style={S.pcBtn} onClick={()=>chg(+1)}>+</button>
+        <div style={S.pDots}>{[1,2,3,4,5,6].map(i=><div key={i} style={S.pDot(i<=cnt)} />)}</div>
       </div>
-      <SecTitle>Dimensions</SecTitle>
-      <RangeSlider label="Height" min={0.5} max={2.5} step={0.1} value={height} display={`${height.toFixed(1)}mm`}
-        onChange={(v) => { setHeight(v); onUpdate("prongHeight", v); }} />
-      <RangeSlider label="Thickness" min={0.3} max={1.5} step={0.1} value={thickness} display={`${thickness.toFixed(1)}mm`}
-        onChange={(v) => { setThickness(v); onUpdate("prongThickness", v); }} />
-      <SecTitle>Metal</SecTitle>
-      <MetalPicker value={metal} onChange={(m) => { setMetal(m.id); onUpdate("color", m.color); onUpdate("metalType", m.id); }} />
-      <div style={S.actRow}>
-        <button style={S.delBtn} onClick={onDelete}>Delete</button>
-        <button style={S.saveBtn} onClick={onSave}>✓ Save Changes</button>
-      </div>
+      <Sec>Dimensions</Sec>
+      <Slider label="Height" min={0.5} max={2.5} step={0.1} value={h} display={`${h.toFixed(1)}mm`} onChange={v=>{setH(v);onUpdate("prongHeight",v);}} />
+      <Slider label="Thickness" min={0.3} max={1.5} step={0.1} value={th} display={`${th.toFixed(1)}mm`} onChange={v=>{setTh(v);onUpdate("prongThickness",v);}} />
+      <Sec>Metal · Karat</Sec>
+      <MetalPicker value={m} onChange={mk=>{setM(mk.id);onUpdate("color",mk.color);onUpdate("metalType",mk.id);}} />
+      <div style={S.actRow}><button style={S.del} onClick={onDelete}>Delete</button><button style={S.save} onClick={onSave}>✓ Save</button></div>
     </>
   );
 }
 
 function SettingControls({ comp, onUpdate, onDelete, onSave }) {
-  const [style, setStyle] = useState(comp.geometry?.settingStyle || "prong");
-  const [metal, setMetal] = useState(comp.materialOverrides?.metalType || "yellow_gold");
-
-  useEffect(() => {
-    setStyle(comp.geometry?.settingStyle || "prong");
-    setMetal(comp.materialOverrides?.metalType || "yellow_gold");
-  }, [comp]);
-
+  const [st,setSt] = useState(comp.geometry?.settingStyle||"prong");
+  const [m, setM]  = useState(comp.materialOverrides?.metalType||"gold_22k");
+  useEffect(()=>{setSt(comp.geometry?.settingStyle||"prong");setM(comp.materialOverrides?.metalType||"gold_22k");},[comp.id]); // eslint-disable-line
   return (
     <>
-      <SecTitle>Transform</SecTitle>
-      <TransformControls comp={comp} onUpdate={onUpdate} />
-      <SecTitle>Setting Style</SecTitle>
-      <div style={S.cutGrid}>
-        {SETTING_STYLES.map((s) => (
-          <div key={s.id} style={S.cutOpt(style === s.id)}
-            onClick={() => { setStyle(s.id); onUpdate("settingStyle", s.id); }}>
-            <div style={S.cutIcon}>{s.icon}</div>
-            <div style={S.cutLabel(style === s.id)}>{s.label}</div>
-          </div>
-        ))}
-      </div>
-      <SecTitle>Metal</SecTitle>
-      <MetalPicker value={metal} onChange={(m) => { setMetal(m.id); onUpdate("color", m.color); onUpdate("metalType", m.id); }} />
-      <div style={S.actRow}>
-        <button style={S.delBtn} onClick={onDelete}>Delete</button>
-        <button style={S.saveBtn} onClick={onSave}>✓ Save Changes</button>
-      </div>
+      <Sec>Transform</Sec><TransformControls comp={comp} onUpdate={onUpdate} />
+      <Sec>Setting Style</Sec>
+      <div style={S.cGrid}>{SETTING_STYLES.map(s=><div key={s.id} style={S.cOpt(st===s.id)} onClick={()=>{setSt(s.id);onUpdate("settingStyle",s.id);}}><div style={{ fontSize:14,color:T.textSub }}>{s.icon}</div><div style={{ fontSize:"8.5px",color:st===s.id?T.accentLight:T.textDim }}>{s.label}</div></div>)}</div>
+      <Sec>Metal · Karat</Sec>
+      <MetalPicker value={m} onChange={mk=>{setM(mk.id);onUpdate("color",mk.color);onUpdate("metalType",mk.id);}} />
+      <div style={S.actRow}><button style={S.del} onClick={onDelete}>Delete</button><button style={S.save} onClick={onSave}>✓ Save</button></div>
     </>
   );
 }
 
 function GenericControls({ comp, onUpdate, onDelete, onSave }) {
-  const [metal, setMetal] = useState(comp.materialOverrides?.metalType || "yellow_gold");
-  useEffect(() => { setMetal(comp.materialOverrides?.metalType || "yellow_gold"); }, [comp]);
-
+  const [m,setM] = useState(comp.materialOverrides?.metalType||"gold_22k");
+  useEffect(()=>{setM(comp.materialOverrides?.metalType||"gold_22k");},[comp.id]); // eslint-disable-line
   return (
     <>
-      <SecTitle>Transform</SecTitle>
-      <TransformControls comp={comp} onUpdate={onUpdate} />
-      <SecTitle>Material</SecTitle>
-      <MetalPicker value={metal} onChange={(m) => { setMetal(m.id); onUpdate("color", m.color); onUpdate("metalType", m.id); }} />
-      <div style={S.actRow}>
-        <button style={S.delBtn} onClick={onDelete}>Delete</button>
-        <button style={S.saveBtn} onClick={onSave}>✓ Save Changes</button>
-      </div>
+      <Sec>Transform</Sec><TransformControls comp={comp} onUpdate={onUpdate} />
+      <Sec>Metal · Karat</Sec>
+      <MetalPicker value={m} onChange={mk=>{setM(mk.id);onUpdate("color",mk.color);onUpdate("metalType",mk.id);}} />
+      <div style={S.actRow}><button style={S.del} onClick={onDelete}>Delete</button><button style={S.save} onClick={onSave}>✓ Save</button></div>
     </>
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  AI Agent
+//  AI Agent Panel
 // ─────────────────────────────────────────────────────────────────────────────
-
 function AIAgentPanel({ onQuickAction }) {
-  const [msg,      setMsg]      = useState("");
-  const [engrave,  setEngrave]  = useState("");
-  const [engrFont, setEngrFont] = useState("Script");
-
-  const qas = [
-    { label: "🌸 Rose gold",  action: "rose gold",  v: "rose" },
-    { label: "✦ Add halo",   action: "add halo",   v: "" },
-    { label: "◻ Minimal",    action: "minimal",    v: "" },
-    { label: "⬡ Art Deco",   action: "art deco",   v: "" },
-    { label: "◆ Sapphire",   action: "sapphire",   v: "blue" },
-    { label: "$ Budget",     action: "budget",     v: "" },
-  ];
-
-  const send = () => { if (!msg.trim()) return; onQuickAction(msg.trim()); setMsg(""); };
-
+  const [msg,setMsg]=useState("");const [eng,setEng]=useState("");const [font,setFont]=useState("Script");
+  const qas=[{l:"🌸 Rose gold",a:"rose gold"},{l:"◆ Sapphire",a:"sapphire"},{l:"◻ Minimal",a:"minimal"},{l:"✦ Add halo",a:"add halo"},{l:"⬡ Art Deco",a:"art deco"},{l:"$ Budget",a:"budget"}];
+  const send=()=>{if(!msg.trim())return;onQuickAction(msg.trim());setMsg("");};
   return (
     <>
-      <div style={S.aiHeader}>
-        <div style={S.aiDot} />
-        <div>
-          <div style={{ fontSize: "12px", fontWeight: 600, color: T.text }}>AI AGENT</div>
-          <div style={{ fontSize: "10px", color: T.textDim }}>GPT-4o connected</div>
-        </div>
-        <button style={{ marginLeft: "auto", background: "none", border: "none", color: T.textDim, cursor: "pointer", fontSize: "14px" }}>↺</button>
+      <div style={S.aiH}>
+        <div style={{ width:7,height:7,borderRadius:"50%",background:T.success,boxShadow:`0 0 6px ${T.success}` }} />
+        <div><div style={{ fontSize:12,fontWeight:600,color:T.text }}>AI AGENT</div><div style={{ fontSize:10,color:T.textDim }}>GPT-4o connected</div></div>
+        <button style={{ marginLeft:"auto",background:"none",border:"none",color:T.textDim,cursor:"pointer",fontSize:14 }}>↺</button>
       </div>
-
-      <div style={S.aiIntro}>
-        I'm your <strong style={{ color: T.accentLight }}>AI jewelry design assistant.</strong>
-        <br />Describe any change in plain English:
-        <br /><span style={{ color: T.textDim }}>• "switch to rose gold and thin band"</span>
-        <br /><span style={{ color: T.textDim }}>• "change center stone to sapphire"</span>
-      </div>
-
+      <div style={S.aiI}>I'm your <strong style={{ color:T.accentLight }}>AI jewelry design assistant</strong>. Describe any change in plain English.</div>
       <div style={S.body}>
-        <SecTitle>Inner Band Engraving</SecTitle>
-        <div style={S.engrRow}>
-          <input style={S.engrInput} placeholder='"Forever mine"' value={engrave}
-            onChange={(e) => setEngrave(e.target.value)} />
-          <button style={S.addBtn} onClick={() => { if (engrave.trim()) { onQuickAction("engrave: " + engrave); setEngrave(""); } }}>ADD</button>
-        </div>
-        <div style={{ display: "flex", gap: "5px", marginBottom: "12px" }}>
-          {["Script","Block","Italic"].map((f) => (
-            <div key={f} style={S.fontTag(engrFont === f)} onClick={() => setEngrFont(f)}>{f}</div>
-          ))}
-        </div>
-
-        <SecTitle>Quick Actions</SecTitle>
-        <div style={S.qaGrid}>
-          {qas.map((q) => (
-            <button key={q.action} style={S.qaBtn(q.v)} onClick={() => onQuickAction(q.action)}>
-              {q.label}
-            </button>
-          ))}
-        </div>
+        <Sec>Inner Band Engraving</Sec>
+        <div style={S.eRow}><input style={S.eIn} placeholder='"Forever mine"' value={eng} onChange={e=>setEng(e.target.value)} /><button style={S.eAdd} onClick={()=>{if(eng.trim()){onQuickAction("engrave: "+eng);setEng("");}}}>ADD</button></div>
+        <div style={{ display:"flex",gap:5,marginBottom:12 }}>{["Script","Block","Italic"].map(f=><div key={f} style={S.fontTag(font===f)} onClick={()=>setFont(f)}>{f}</div>)}</div>
+        <Sec>Quick Actions</Sec>
+        <div style={{ display:"flex",flexWrap:"wrap",gap:6,marginBottom:12 }}>{qas.map(q=><button key={q.a} onClick={()=>onQuickAction(q.a)} style={{ padding:"5px 10px",borderRadius:7,fontSize:11,cursor:"pointer",border:"1px solid rgba(123,92,229,0.2)",background:"rgba(123,92,229,0.05)",color:T.textSub }}>{q.l}</button>)}</div>
       </div>
-
       <div style={S.chatArea}>
-        <textarea style={S.chatInput} placeholder="Describe a change..." value={msg} rows={1}
-          onChange={(e) => setMsg(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-        />
-        <button style={S.sendBtn} onClick={send}>
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M14 2L2 8l5 2 2 5 5-13z" />
-          </svg>
-        </button>
+        <textarea style={S.chatIn} placeholder="Describe a change…" value={msg} rows={1} onChange={e=>setMsg(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}}} />
+        <button style={S.sendBtn} onClick={send}><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2L2 8l5 2 2 5 5-13z"/></svg></button>
       </div>
     </>
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Analytics
+//  Analytics Panel
 // ─────────────────────────────────────────────────────────────────────────────
+function AnalyticsPanel({ jewelryJSON, apiState }) {
+  const { data, isBackend } = apiState;
+  const comps   = jewelryJSON?.components || [];
+  const rows    = isBackend && data
+    ? data.components
+    : comps.map(c=>({ id:c.id,name:c.name||c.id,type:c.type,is_gem:isGemComp(c.type),total_inr:localEstimate(c),total_formatted:"",weight_grams:0,material_label:"" }));
 
-function AnalyticsPanel({ jewelryJSON }) {
-  const comps      = jewelryJSON?.components || [];
-  const gemCount   = comps.filter((c) => isGemType(c.type)).length;
-  const metalCount = comps.length - gemCount;
+  const grand  = isBackend && data ? data.grand_total_inr          : rows.reduce((s,r)=>s+r.total_inr,0);
+  const wt     = isBackend && data ? data.total_weight_grams       : 0;
+  const bppg   = isBackend && data ? data.blended_price_per_gram   : 0;
 
   return (
     <div style={S.body}>
-      <SecTitle>Design Overview</SecTitle>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "14px" }}>
-        {[
-          { label: "Total Components", value: comps.length },
-          { label: "Gem Stones",       value: gemCount },
-          { label: "Metal Parts",      value: metalCount },
-          { label: "Version",          value: "v1" },
-        ].map((item) => (
-          <div key={item.label} style={{
-            background: T.bg2, borderRadius: "9px", padding: "10px",
-            border: "1px solid rgba(123,92,229,0.12)",
-          }}>
-            <div style={{ fontSize: "10px", color: T.textDim, marginBottom: "4px" }}>{item.label}</div>
-            <div style={{ fontSize: "18px", fontWeight: 600, color: T.accentLight }}>{item.value}</div>
+      <Sec>Design Overview</Sec>
+      <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14 }}>
+        {[{ l:"Components",v:rows.length },{ l:"Gems",v:rows.filter(r=>r.is_gem).length },{ l:"Metal",v:rows.filter(r=>!r.is_gem).length },{ l:"Version",v:"v1" }].map(i=>(
+          <div key={i.l} style={{ background:T.bg2,borderRadius:9,padding:10,border:"1px solid rgba(123,92,229,0.12)" }}>
+            <div style={{ fontSize:10,color:T.textDim,marginBottom:4 }}>{i.l}</div>
+            <div style={{ fontSize:18,fontWeight:600,color:T.accentLight }}>{i.v}</div>
           </div>
         ))}
       </div>
-
-      <SecTitle>Components</SecTitle>
-      <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
-        {comps.map((c) => (
-          <div key={c.id} style={{
-            background: T.bg2, borderRadius: "7px", padding: "8px 10px",
-            border: "1px solid rgba(123,92,229,0.1)",
-            display: "flex", alignItems: "center", gap: "8px",
-          }}>
-            <div style={{
-              width: "8px", height: "8px", borderRadius: "50%", flexShrink: 0,
-              background: isGemType(c.type)
-                ? "linear-gradient(135deg,#4B6CF7,#9B59E8)"
-                : "linear-gradient(135deg,#9B59E8,#E040FB)",
-            }} />
-            <div style={{ fontSize: "11px", color: T.text, flex: 1 }}>{c.name || c.id}</div>
-            <div style={{ fontSize: "10px", color: T.textDim }}>{c.type}</div>
+      <div style={{ background:"linear-gradient(135deg,rgba(75,108,247,0.12),rgba(224,64,251,0.07))",border:"1px solid rgba(123,92,229,0.22)",borderRadius:12,padding:"14px 16px",marginBottom:8,display:"flex",alignItems:"center",justifyContent:"space-between" }}>
+        <div>
+          <div style={{ fontSize:10,color:T.textDim,letterSpacing:"0.8px",textTransform:"uppercase",marginBottom:4 }}>Estimated Cost</div>
+          <div style={{ fontSize:26,fontWeight:800,fontFamily:"'Nunito',sans-serif",background:T.grad,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",backgroundClip:"text" }}>
+            {(isBackend && data) ? data.grand_total_formatted : fmtINR(grand)}
           </div>
-        ))}
-      </div>
-
-      <SecTitle>Production Ready?</SecTitle>
-      <div style={{
-        background: "rgba(46,204,113,0.08)", border: "1px solid rgba(46,204,113,0.2)",
-        borderRadius: "9px", padding: "10px",
-        display: "flex", alignItems: "center", gap: "10px",
-      }}>
-        <div style={{ fontSize: "24px", fontWeight: 700, color: T.success, fontFamily: "'Nunito',sans-serif" }}>93</div>
-        <div style={{ fontSize: "11px", color: T.success, lineHeight: 1.4 }}>
-          <strong>High Precision</strong><br />Ready for production
+          <div style={{ fontSize:10,color:T.textDim,marginTop:3 }}>{isBackend ? "Flask API · INR" : "Local estimate · INR"}</div>
         </div>
+        <div style={{ width:48,height:48,borderRadius:12,background:T.grad,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0 }}>₹</div>
+      </div>
+      <div style={{ background:"rgba(123,92,229,0.06)",border:"1px solid rgba(123,92,229,0.18)",borderRadius:10,padding:"10px 14px",marginBottom:14,display:"flex",gap:12,alignItems:"center" }}>
+        <div style={{ flex:1 }}>
+          <div style={{ fontSize:9,color:T.textDim,letterSpacing:"0.6px",textTransform:"uppercase",marginBottom:3 }}>Blended ₹/gram</div>
+          <div style={{ fontSize:18,fontWeight:700,fontFamily:"'Nunito',sans-serif",background:"linear-gradient(90deg,#4B6CF7,#E040FB)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",backgroundClip:"text" }}>{fmtINR(bppg)}/g</div>
+        </div>
+        <div style={{ flex:1 }}>
+          <div style={{ fontSize:9,color:T.textDim,letterSpacing:"0.6px",textTransform:"uppercase",marginBottom:3 }}>Total Weight</div>
+          <div style={{ fontSize:18,fontWeight:700,fontFamily:"'Nunito',sans-serif",color:T.accentLight }}>{wt.toFixed(2)}g</div>
+        </div>
+      </div>
+      <Sec>Components</Sec>
+      <div style={{ display:"flex",flexDirection:"column",gap:5 }}>
+        {rows.map(r=>(
+          <div key={r.id} style={{ background:T.bg2,borderRadius:7,padding:"8px 10px",border:"1px solid rgba(123,92,229,0.1)",display:"flex",alignItems:"center",gap:8 }}>
+            <div style={{ width:8,height:8,borderRadius:"50%",flexShrink:0,background:r.is_gem?"linear-gradient(135deg,#4B6CF7,#9B59E8)":"linear-gradient(135deg,#9B59E8,#E040FB)" }} />
+            <div style={{ fontSize:11,color:T.text,flex:1 }}>{r.name}</div>
+            <div style={{ fontSize:9,color:T.textDim }}>{r.weight_grams>0?`${r.weight_grams.toFixed(2)}g`:r.material_label||r.type}</div>
+            <div style={{ fontSize:11,fontWeight:600,color:T.accentLight,fontFamily:"monospace",background:"rgba(123,92,229,0.1)",padding:"1px 7px",borderRadius:5 }}>
+              {r.total_formatted || fmtINR(r.total_inr)}
+            </div>
+          </div>
+        ))}
+      </div>
+      <Sec>Production Ready?</Sec>
+      <div style={{ background:"rgba(46,204,113,0.08)",border:"1px solid rgba(46,204,113,0.2)",borderRadius:9,padding:10,display:"flex",alignItems:"center",gap:10 }}>
+        <div style={{ fontSize:24,fontWeight:700,color:T.success,fontFamily:"'Nunito',sans-serif" }}>93</div>
+        <div style={{ fontSize:11,color:T.success,lineHeight:1.4 }}><strong>High Precision</strong><br/>Ready for production</div>
       </div>
     </div>
   );
@@ -772,115 +977,85 @@ function AnalyticsPanel({ jewelryJSON }) {
 // ─────────────────────────────────────────────────────────────────────────────
 //  Main export
 // ─────────────────────────────────────────────────────────────────────────────
-
-export default function ControlPanel({
-  selectedId, jewelryJSON, setJewelryJSON,
-  setSelectedId, designId, onQuickAction,
-}) {
+export default function ControlPanel({ selectedId, jewelryJSON, setJewelryJSON, setSelectedId, designId, onQuickAction }) {
   const [activeTab, setActiveTab] = useState("agent");
-
   useEffect(() => { if (selectedId) setActiveTab("controls"); }, [selectedId]);
 
-  const comp = jewelryJSON?.components?.find((c) => c.id === selectedId);
+  // Single hook — fires API call on any jewelryJSON change
+  const apiState = usePriceAPI(jewelryJSON);
 
-  const updateComp = (path, val) => {
-    setJewelryJSON((prev) => {
+  const comp = jewelryJSON?.components?.find(c => c.id === selectedId);
+
+  const updateComp = useCallback((path, val) => {
+    setJewelryJSON(prev => {
       if (!prev) return prev;
       return {
         ...prev,
-        components: prev.components.map((c) => {
+        components: prev.components.map(c => {
           if (c.id !== selectedId) return c;
-          const copy = {
+          const cp = {
             ...c,
-            transform:         { ...(c.transform         || { position:[0,0,0], scale:1, rotation:[0,0,0] }) },
+            transform:         { ...(c.transform         || { position:[0,0,0],scale:1,rotation:[0,0,0] }) },
             materialOverrides: { ...(c.materialOverrides || {}) },
             geometry:          { ...(c.geometry          || {}) },
           };
-          if (path === "_position")  { copy.transform = { ...copy.transform, position: val }; return copy; }
-          if (path === "scale")      { copy.transform = { ...copy.transform, scale: val };    return copy; }
-          if (path === "x") { copy.transform.position = [...(copy.transform.position||[0,0,0])]; copy.transform.position[0] = val; return copy; }
-          if (path === "y") { copy.transform.position = [...(copy.transform.position||[0,0,0])]; copy.transform.position[1] = val; return copy; }
-          if (path === "z") { copy.transform.position = [...(copy.transform.position||[0,0,0])]; copy.transform.position[2] = val; return copy; }
-          if (path === "color")     { copy.materialOverrides.color     = val; return copy; }
-          if (path === "metalType") { copy.materialOverrides.metalType = val; return copy; }
-          if (path === "gemType")   { copy.materialOverrides.gemType   = val; return copy; }
-          const geoPaths = ["bandWidth","profile","ringSize","cut","caratSize","prongCount","prongHeight","prongThickness","settingStyle","count"];
-          if (geoPaths.includes(path)) { copy.geometry[path] = val; return copy; }
-          return copy;
+          if (path==="_position")    { cp.transform={...cp.transform,position:val}; return cp; }
+          if (path==="scale")        { cp.transform={...cp.transform,scale:val};    return cp; }
+          if (path==="color")        { cp.materialOverrides.color=val;        return cp; }
+          if (path==="metalType")    { cp.materialOverrides.metalType=val;    return cp; }
+          if (path==="gemType")      { cp.materialOverrides.gemType=val;      return cp; }
+          if (path==="diamondColor") { cp.materialOverrides.diamondColor=val; return cp; }
+          const GEO = ["bandWidth","profile","ringSize","cut","caratSize","prongCount","prongHeight","prongThickness","settingStyle","count"];
+          if (GEO.includes(path))    { cp.geometry[path]=val; return cp; }
+          return cp;
         }),
       };
     });
-  };
+  }, [selectedId, setJewelryJSON]);
 
   const deleteComp = () => {
-    setJewelryJSON((prev) => ({ ...prev, components: prev.components.filter((c) => c.id !== selectedId) }));
+    setJewelryJSON(p => ({ ...p, components:p.components.filter(c=>c.id!==selectedId) }));
     setSelectedId(null);
   };
 
   const saveToStorage = () => {
-    setJewelryJSON((prev) => {
-      if (!prev || !designId) return prev;
-      const str = JSON.stringify(prev);
-      localStorage.setItem(`design_${designId}_level2`, str);
-      localStorage.setItem(`design_${designId}_level1`, str);
-      return prev;
+    setJewelryJSON(p => {
+      if (!p||!designId) return p;
+      const s=JSON.stringify(p);
+      localStorage.setItem(`design_${designId}_level2`,s);
+      localStorage.setItem(`design_${designId}_level1`,s);
+      return p;
     });
   };
 
   const renderControls = () => {
-    if (!comp) {
-      return (
-        <div style={S.noSel}>
-          <div style={{ fontSize: "28px", marginBottom: "10px", opacity: 0.4 }}>◎</div>
-          Click any component in the 3D view<br />or the component tree to edit it
-        </div>
-      );
-    }
-    const ctype  = (comp.type || "").toLowerCase().trim();
-    const common = { key: comp.id, comp, onUpdate: updateComp, onDelete: deleteComp, onSave: saveToStorage };
-    if (isGemType(ctype))                             return <GemControls     {...common} />;
+    if (!comp) return <div style={S.noSel}><div style={{ fontSize:28,marginBottom:10,opacity:0.4 }}>◎</div>Click any component<br/>in the 3D view to edit it</div>;
+    const ctype = (comp.type||"").toLowerCase().trim();
+    const common = { key:comp.id, comp, onUpdate:updateComp, onDelete:deleteComp, onSave:saveToStorage };
+    if (isGemComp(ctype))                             return <GemControls     {...common} />;
     if (["prong","prongs"].includes(ctype))           return <ProngControls   {...common} />;
     if (["setting","basket","bezel"].includes(ctype)) return <SettingControls {...common} />;
-    if (["band","ring","shank"].includes(ctype))      return <BandControls    {...common} />;
+    if (isMetalComp(ctype))                           return <BandControls    {...common} />;
     return <GenericControls {...common} />;
   };
 
-  const tabs = [
-    { id: "agent",     label: "AI Agent" },
-    { id: "controls",  label: "Controls" },
-    { id: "analytics", label: "Analytics" },
-  ];
-
   return (
     <div style={S.panel}>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}`}</style>
       <div style={S.tabRow}>
-        {tabs.map((t) => (
-          <button key={t.id} style={S.tabBtn(activeTab === t.id)} onClick={() => setActiveTab(t.id)}>
-            {t.label}
-          </button>
+        {[{id:"agent",label:"AI Agent"},{id:"controls",label:"Controls"},{id:"analytics",label:"Analytics"}].map(t=>(
+          <button key={t.id} style={S.tabBtn(activeTab===t.id)} onClick={()=>setActiveTab(t.id)}>{t.label}</button>
         ))}
       </div>
-
-      {activeTab === "agent" && (
-        <div style={{ display: "flex", flexDirection: "column", flex: 1, overflow: "hidden" }}>
-          <AIAgentPanel onQuickAction={onQuickAction || (() => {})} />
-        </div>
-      )}
-
-      {activeTab === "controls" && (
-        <div style={{ display: "flex", flexDirection: "column", flex: 1, overflow: "hidden" }}>
-          {comp && (
-            <div style={S.selBanner}>
-              <div style={S.selDot} />
-              <div style={S.selName}>{comp.name || comp.id}</div>
-              <div style={S.selType}>{comp.type}</div>
-            </div>
-          )}
+      {activeTab==="agent" && <div style={{ display:"flex",flexDirection:"column",flex:1,overflow:"hidden" }}><AIAgentPanel onQuickAction={onQuickAction||(()=>{})} /></div>}
+      {activeTab==="controls" && (
+        <div style={{ display:"flex",flexDirection:"column",flex:1,overflow:"hidden" }}>
+          <PriceSummary comp={comp} jewelryJSON={jewelryJSON} apiState={apiState} />
+          {comp && <div style={S.selBanner}><div style={S.selDot}/><div style={S.selName}>{comp.name||comp.id}</div><div style={S.selType}>{comp.type}</div></div>}
           <div style={S.body}>{renderControls()}</div>
         </div>
       )}
-
-      {activeTab === "analytics" && <AnalyticsPanel jewelryJSON={jewelryJSON} />}
+      {activeTab==="analytics" && <AnalyticsPanel jewelryJSON={jewelryJSON} apiState={apiState} />}
     </div>
   );
 }

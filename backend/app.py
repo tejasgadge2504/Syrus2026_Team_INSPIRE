@@ -14,6 +14,7 @@ from flask_cors import CORS
 from services.model_service import create_model_pipeline
 
 
+from price import price_bp
 from auth import auth_bp
 from designs import new_design_bp
 
@@ -21,7 +22,8 @@ app = Flask(__name__)
 CORS(app)
 app.register_blueprint(auth_bp, url_prefix="/auth")
 app.register_blueprint(new_design_bp)
-
+app.register_blueprint(price_bp, url_prefix="/api/price")
+ 
 # -------------------------
 # GEMINI CONFIG
 # -------------------------
