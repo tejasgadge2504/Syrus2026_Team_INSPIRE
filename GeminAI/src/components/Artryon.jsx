@@ -1,12 +1,11 @@
 /**
  * ARTryOn.jsx
  *
- * Renders the EXACT same jewelry model from level2_json on top of a live
- * webcam feed, anchored to MediaPipe hand / face / pose landmarks.
- *
- * The model-building logic (buildMaterial, buildGeometry, applyTransform,
- * OBJLoader) is copied 1-to-1 from ModelRenderer so the user sees their
- * actual customised design, not a generic shape.
+ * Fixed rendering for all jewelry types:
+ *  Ring     — flat torus perpendicular to finger, diamond facing camera
+ *  Bracelet — flat around wrist cross-section
+ *  Earring  — hangs below ear, gem faces forward
+ *  Necklace — pendant centered on collar, front-facing
  *
  * npm install @mediapipe/hands @mediapipe/face_mesh @mediapipe/pose
  *             @mediapipe/camera_utils @mediapipe/drawing_utils
@@ -33,7 +32,7 @@ const T = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Shared model-building helpers  (identical to ModelRenderer.jsx)
+//  Model-building helpers (identical to ModelRenderer.jsx)
 // ─────────────────────────────────────────────────────────────────────────────
 
 function isGemType(type) {
@@ -77,9 +76,7 @@ function buildGeometry(comp) {
 
   if (gtype === "torus")      return new THREE.TorusGeometry(g.radius || 1, g.tube || 0.12, 64, 256);
   if (gtype === "sphere")     return new THREE.SphereGeometry(g.radius || 0.3, 64, 64);
-  if (gtype === "cylinder") {
-    return new THREE.CylinderGeometry(g.radiusTop ?? g.radius ?? 0.05, g.radiusBottom ?? g.radius ?? 0.05, g.height || 0.2, 32);
-  }
+  if (gtype === "cylinder")   return new THREE.CylinderGeometry(g.radiusTop ?? g.radius ?? 0.05, g.radiusBottom ?? g.radius ?? 0.05, g.height || 0.2, 32);
   if (gtype === "box")        return new THREE.BoxGeometry(g.width || 0.2, g.height || 0.2, g.depth || 0.2);
   if (gtype === "octahedron") return new THREE.OctahedronGeometry(g.radius || 0.25, 2);
   if (gtype === "cone")       return new THREE.ConeGeometry(g.radius || 0.06, g.height || 0.18, 32);
@@ -108,20 +105,41 @@ function applyCompTransform(obj, comp) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Build the full jewelry group from level2_json
-//  Returns a Promise<THREE.Group> that contains every component
-//  positioned/scaled exactly as in the Editor.
+//  Build jewelry group from level2_json
+//  Returns Promise<{ pivot: THREE.Group, naturalSize: number }>
+//  pivot is centred at its bounding-box centre so position = landmark position
 // ─────────────────────────────────────────────────────────────────────────────
 function buildJewelryGroup(level2, envMap) {
   return new Promise((resolve) => {
     const components = level2?.components || [];
-    const root       = new THREE.Group();
+    const inner      = new THREE.Group();   // raw scene-space group
     const objLoader  = new OBJLoader();
     let   pending    = 0;
 
-    const done = () => { if (--pending <= 0) resolve(root); };
+    const finish = () => {
+      if (pending > 0) return;
 
-    if (components.length === 0) { resolve(root); return; }
+      // Centre the inner group so pivot.position == bounding-box centre
+      const box    = new THREE.Box3().setFromObject(inner);
+      const centre = box.getCenter(new THREE.Vector3());
+      inner.position.sub(centre);
+
+      // Measure natural size AFTER centering so scale ratio works correctly
+      const box2       = new THREE.Box3().setFromObject(inner);
+      const size       = box2.getSize(new THREE.Vector3());
+      const naturalSize = Math.max(size.x, size.y, size.z) || 1;
+
+      const pivot = new THREE.Group();
+      pivot.add(inner);
+      resolve({ pivot, naturalSize });
+    };
+
+    if (components.length === 0) {
+      const pivot = new THREE.Group();
+      pivot.add(inner);
+      resolve({ pivot, naturalSize: 1 });
+      return;
+    }
 
     components.forEach((comp) => {
       pending++;
@@ -129,73 +147,63 @@ function buildJewelryGroup(level2, envMap) {
 
       if (comp.model_path) {
         const url = `http://localhost:5000/${comp.model_path}`;
-        objLoader.load(
-          url,
+        objLoader.load(url,
           (obj) => {
-            getMeshes(obj).forEach((m) => {
-              m.material = mat;
-              m.castShadow = m.receiveShadow = true;
-            });
+            getMeshes(obj).forEach((m) => { m.material = mat; m.castShadow = m.receiveShadow = true; });
             applyCompTransform(obj, comp);
-            root.add(obj);
-            done();
+            inner.add(obj);
+            if (--pending <= 0) finish();
           },
           undefined,
           () => {
-            // OBJ load failed → use procedural geometry for this component
             const mesh = new THREE.Mesh(buildGeometry(comp), mat);
+            mesh.castShadow = mesh.receiveShadow = true;
             applyCompTransform(mesh, comp);
-            root.add(mesh);
-            done();
+            inner.add(mesh);
+            if (--pending <= 0) finish();
           }
         );
       } else {
         const mesh = new THREE.Mesh(buildGeometry(comp), mat);
+        mesh.castShadow = mesh.receiveShadow = true;
         applyCompTransform(mesh, comp);
-        root.add(mesh);
-        done();
+        inner.add(mesh);
+        if (--pending <= 0) finish();
       }
     });
   });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Detect jewelry type from level2_json → which MediaPipe tracker to use
+//  Jewelry type detection
 // ─────────────────────────────────────────────────────────────────────────────
 function detectJewelryType(level2) {
   const override = localStorage.getItem("ar_jewelry_type_override");
   if (override) { localStorage.removeItem("ar_jewelry_type_override"); return override; }
   if (!level2) return "ring";
 
-  const comps    = level2.components || [];
-  const glbPath  = (level2.output?.final_glb || "").toLowerCase();
-  const allNames = comps.map(c =>
-    `${c.name||""} ${c.type||""} ${c.render_type||""}`.toLowerCase()
-  ).join(" ");
+  const comps   = level2.components || [];
+  const glbPath = (level2.output?.final_glb || "").toLowerCase();
+  const names   = comps.map(c => `${c.name||""} ${c.type||""} ${c.render_type||""}`.toLowerCase()).join(" ");
 
-  if (glbPath.includes("necklace") || glbPath.includes("pendant") ||
-      allNames.includes("necklace") || allNames.includes("pendant") || allNames.includes("chain"))
-    return "necklace";
-  if (glbPath.includes("earring") || allNames.includes("earring"))
-    return "earring";
-  if (glbPath.includes("bracelet") || allNames.includes("bracelet") || allNames.includes("bangle"))
-    return "bracelet";
+  if (glbPath.includes("necklace")||glbPath.includes("pendant")||names.includes("necklace")||names.includes("pendant")||names.includes("chain")) return "necklace";
+  if (glbPath.includes("earring")||names.includes("earring")) return "earring";
+  if (glbPath.includes("bracelet")||names.includes("bracelet")||names.includes("bangle")) return "bracelet";
   return "ring";
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Placement config
+//  Placement configs
 // ─────────────────────────────────────────────────────────────────────────────
 const PLACEMENT = {
-  ring:     { label: "Hold your hand up, palm facing camera",       icon: "💍", trackWith: "hands" },
-  bracelet: { label: "Hold your wrist up, palm facing camera",      icon: "⌚", trackWith: "hands" },
-  earring:  { label: "Look straight into the camera",              icon: "💎", trackWith: "face"  },
-  necklace: { label: "Stand back so your shoulders are visible",   icon: "📿", trackWith: "pose"  },
+  ring:     { label: "Hold your hand up, palm facing camera",     icon: "💍", trackWith: "hands" },
+  bracelet: { label: "Hold your wrist up, palm facing camera",    icon: "⌚", trackWith: "hands" },
+  earring:  { label: "Look straight into the camera",            icon: "💎", trackWith: "face"  },
+  necklace: { label: "Stand back so your shoulders are visible", icon: "📿", trackWith: "pose"  },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  MediaPipe landmark → Three.js orthographic world coords
-//  x,y ∈ [0,1] top-left origin; we flip x for mirror.
+//  Landmark → Three.js orthographic world
 // ─────────────────────────────────────────────────────────────────────────────
 function lmToWorld(lm, aspect) {
   return new THREE.Vector3(
@@ -206,44 +214,31 @@ function lmToWorld(lm, aspect) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Auto-scale the loaded jewelry group to match the tracked body part.
-//  targetSize = desired world-space diameter of the bounding sphere.
-// ─────────────────────────────────────────────────────────────────────────────
-function scaleGroupToFit(group, targetSize) {
-  const box = new THREE.Box3().setFromObject(group);
-  if (box.isEmpty()) return;
-  const size   = box.getSize(new THREE.Vector3());
-  const maxDim = Math.max(size.x, size.y, size.z);
-  if (maxDim > 0) group.scale.setScalar(targetSize / maxDim);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  ARTryOn Component
+//  ARTryOn
 // ─────────────────────────────────────────────────────────────────────────────
 export default function ARTryOn() {
-  const navigate   = useNavigate();
-  const wrapRef    = useRef(null);
-  const videoRef   = useRef(null);
-  const canvas2D   = useRef(null);
-  const canvas3D   = useRef(null);
+  const navigate    = useNavigate();
+  const wrapRef     = useRef(null);
+  const videoRef    = useRef(null);
+  const canvas2D    = useRef(null);
+  const canvas3D    = useRef(null);
 
   // Three.js
-  const rendererRef = useRef(null);
-  const sceneRef    = useRef(null);
-  const cameraRef   = useRef(null);
-  const rafRef      = useRef(null);
-  const envMapRef   = useRef(null);
+  const rendererRef   = useRef(null);
+  const sceneRef      = useRef(null);
+  const cameraRef     = useRef(null);
+  const rafRef        = useRef(null);
+  const envMapRef     = useRef(null);
+  const pivotRef      = useRef(null);     // the repositioned group
+  const naturalSzRef  = useRef(1);        // bounding-sphere size at rest scale
 
-  // The jewelry group that gets repositioned each frame
-  const jewelGroupRef = useRef(null);
-
-  // Smooth interpolation targets
+  // Smooth targets
   const sPos  = useRef(new THREE.Vector3());
   const sQuat = useRef(new THREE.Quaternion());
   const sSc   = useRef(0.1);
 
   // MediaPipe
-  const mpRef  = useRef(null);   // { tracker, mpCamera }
+  const mpRef = useRef(null);
 
   // State
   const [jType,       setJType]       = useState("ring");
@@ -255,18 +250,19 @@ export default function ARTryOn() {
   const [fps,         setFps]         = useState(0);
   const [modelLoaded, setModelLoaded] = useState(false);
 
-  const trackRef    = useRef(false);
-  const showDbgRef  = useRef(false);
-  const fpsRef      = useRef({ n: 0, t: Date.now() });
+  const trackRef   = useRef(false);
+  const showDbgRef = useRef(false);
+  const jTypeRef   = useRef("ring");    // always-current jType for callbacks
+  const fpsRef     = useRef({ n: 0, t: Date.now() });
 
   useEffect(() => { showDbgRef.current = showDebug; }, [showDebug]);
+  useEffect(() => { jTypeRef.current   = jType;     }, [jType]);
 
-  // Read JSON
-  const designId  = localStorage.getItem("currentDesignId");
-  const raw2      = localStorage.getItem(`design_${designId}_level2`);
-  const level2    = raw2 ? JSON.parse(raw2) : null;
+  const designId = localStorage.getItem("currentDesignId");
+  const raw2     = localStorage.getItem(`design_${designId}_level2`);
+  const level2   = raw2 ? JSON.parse(raw2) : null;
 
-  // ── Three.js scene setup ──────────────────────────────────────────────────
+  // ── Three.js init ──────────────────────────────────────────────────────────
   const initThree = useCallback(() => {
     const wrap = wrapRef.current;
     if (!wrap) return;
@@ -275,8 +271,7 @@ export default function ARTryOn() {
 
     const renderer = new THREE.WebGLRenderer({
       canvas:    canvas3D.current,
-      alpha:     true,
-      antialias: true,
+      alpha:     true, antialias: true,
       preserveDrawingBuffer: true,
     });
     renderer.setSize(W, H);
@@ -291,33 +286,27 @@ export default function ARTryOn() {
     const scene = new THREE.Scene();
     sceneRef.current = scene;
 
-    // PBR env map — same as ModelRenderer
-    const pmrem = new THREE.PMREMGenerator(renderer);
+    const pmrem  = new THREE.PMREMGenerator(renderer);
     pmrem.compileEquirectangularShader();
     const envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    envMapRef.current  = envTex;
-    scene.environment  = envTex;
+    envMapRef.current = envTex;
+    scene.environment = envTex;
     pmrem.dispose();
 
-    // Lighting — same balance as ModelRenderer
-    const ambient = new THREE.AmbientLight(0xffffff, 0.5);
-    scene.add(ambient);
-    const key = new THREE.DirectionalLight(0xfff5e0, 2.0);
-    key.position.set(5, 10, 7);
-    key.castShadow = true;
-    scene.add(key);
-    const fill = new THREE.DirectionalLight(0xddeeff, 0.5);
-    fill.position.set(-5, 3, -5);
-    scene.add(fill);
-    const rim = new THREE.DirectionalLight(0xffe0a0, 0.8);
-    rim.position.set(0, -2, -6);
-    scene.add(rim);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+    const key = new THREE.DirectionalLight(0xfff5e0, 2.2);
+    key.position.set(5, 10, 7); key.castShadow = true; scene.add(key);
+    const fill = new THREE.DirectionalLight(0xddeeff, 0.6);
+    fill.position.set(-5, 3, -5); scene.add(fill);
+    const rim = new THREE.DirectionalLight(0xffe0a0, 0.9);
+    rim.position.set(0, -2, -6); scene.add(rim);
+    // Extra front light so gems sparkle toward camera
+    const front = new THREE.DirectionalLight(0xffffff, 0.5);
+    front.position.set(0, 0, 10); scene.add(front);
 
-    // Orthographic camera — 1-to-1 with normalised screen coords
     const aspect = W / H;
     const cam    = new THREE.OrthographicCamera(-aspect, aspect, 1, -1, -20, 20);
-    cam.position.set(0, 0, 5);
-    cameraRef.current = cam;
+    cam.position.set(0, 0, 5); cameraRef.current = cam;
 
     const loop = () => {
       rafRef.current = requestAnimationFrame(loop);
@@ -332,18 +321,17 @@ export default function ARTryOn() {
     loop();
 
     const onResize = () => {
-      const w = wrap.clientWidth  || window.innerWidth;
+      const w = wrap.clientWidth || window.innerWidth;
       const h = wrap.clientHeight || window.innerHeight;
-      const a = w / h;
       renderer.setSize(w, h);
-      cam.left = -a; cam.right = a;
+      cam.left = -(w/h); cam.right = (w/h);
       cam.updateProjectionMatrix();
     };
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
-  // ── Build and add jewelry group from level2_json ──────────────────────────
+  // ── Load jewelry ───────────────────────────────────────────────────────────
   const loadJewelry = useCallback(async (type) => {
     const scene  = sceneRef.current;
     const envMap = envMapRef.current;
@@ -352,54 +340,83 @@ export default function ARTryOn() {
     setStatusMsg("Building your model…");
     setModelLoaded(false);
 
-    // Remove old group
-    if (jewelGroupRef.current) {
-      scene.remove(jewelGroupRef.current);
-      jewelGroupRef.current = null;
+    if (pivotRef.current) { scene.remove(pivotRef.current); pivotRef.current = null; }
+
+    const { pivot, naturalSize } = await buildJewelryGroup(level2, envMap);
+    naturalSzRef.current = naturalSize;
+
+    // ── Canonical orientation per jewelry type ──────────────────────────────
+    // Three.js default:
+    //   Torus (ring) created in XY plane — opening faces +Z (toward camera) ✓
+    //   OctahedronGeometry (gem) points up along Y axis ✓
+    //   After buildJewelryGroup the group is centred at origin
+    //
+    // For RING: we want the ring flat on the finger (XZ plane), gem on top.
+    //   → Rotate ring band by -90° around X so its hole aligns with finger axis (Y).
+    //   → The gem already sticks up on Y — correct.
+    // For BRACELET: same as ring but wider.
+    // For EARRING: gem should hang below ear and face camera (+Z).
+    //   → No base rotation needed (OctahedronGeometry already Y-up, faces camera).
+    // For NECKLACE: pendant lies flat in XY, must face camera (+Z).
+    //   → Torus is already in XY plane, so it faces camera. Good.
+
+    const inner = pivot.children[0]; // the inner group
+    inner.rotation.set(0, 0, 0);
+
+    if (type === "ring" || type === "bracelet") {
+      // Ring torus is in XY plane by default (open toward +Z).
+      // We need the hole to align with the finger direction (Y in world space after placement).
+      // Rotate -90° around X so the torus plane becomes the XZ plane, hole along Y.
+      inner.rotation.x = Math.PI / 2;
     }
-
-    // Build group from level2_json — same components, colors, transforms
-    const group = await buildJewelryGroup(level2, envMap);
-
-    // Wrap in a pivot so we can reposition without fighting component offsets
-    const pivot = new THREE.Group();
-    pivot.add(group);
-
-    // Centre the group at origin so it rotates around its own centre
-    const box    = new THREE.Box3().setFromObject(group);
-    const centre = box.getCenter(new THREE.Vector3());
-    group.position.sub(centre);   // shift children so bounding-box centre = 0
+    // earring: default orientation is fine — gem faces +Z (camera)
+    // necklace: pendant torus in XY plane faces camera — fine
 
     scene.add(pivot);
-    jewelGroupRef.current = pivot;
+    pivotRef.current = pivot;
 
-    // Initialise smooth targets at origin so first frame doesn't flash to 0,0,0
-    sPos.current.set(0, 0, 0);
+    // Start smooth targets at off-screen so first frame doesn't flash at origin
+    sPos.current.set(0, -5, 0);
     sQuat.current.identity();
+    sSc.current = 0.001;
 
     setModelLoaded(true);
     setStatus("tracking");
     setStatusMsg(`${PLACEMENT[type]?.icon}  ${PLACEMENT[type]?.label}`);
   }, [level2]);
 
-  // ── Place group each frame ────────────────────────────────────────────────
+  // ── Place jewelry each frame ───────────────────────────────────────────────
+  // targetPos   — world position of the anchor landmark
+  // targetQuat  — orientation quaternion (aligns model to body part axis)
+  // targetScale — desired world-space size (bounding sphere diameter)
   const placeJewel = useCallback((targetPos, targetQuat, targetScale) => {
-    const pivot = jewelGroupRef.current;
+    const pivot = pivotRef.current;
     if (!pivot) return;
 
-    // Smooth lerp / slerp to kill MediaPipe jitter
-    sPos.current.lerp(targetPos, 0.22);
-    sQuat.current.slerp(targetQuat, 0.18);
-    sSc.current += (targetScale - sSc.current) * 0.20;
+    // Smooth
+    sPos.current.lerp(targetPos, 0.25);
+    sQuat.current.slerp(targetQuat, 0.20);
+    sSc.current  += (targetScale - sSc.current) * 0.18;
 
     pivot.position.copy(sPos.current);
     pivot.quaternion.copy(sQuat.current);
-    scaleGroupToFit(jewelGroupRef.current, sSc.current);
+
+    // Scale so bounding sphere == targetScale
+    const s = sPos.current.x !== 0 || sPos.current.y !== 0
+      ? (sPos.current, Math.max(0.0001, sPos.current, sSc.current / naturalSzRef.current))
+      : sSc.current / naturalSzRef.current;
+    pivot.scale.setScalar(sSc.current / naturalSzRef.current);
 
     if (!trackRef.current) { trackRef.current = true; setTrackingOK(true); }
   }, []);
 
-  // ── Hands result ──────────────────────────────────────────────────────────
+  // ── Hands callback ─────────────────────────────────────────────────────────
+  // Ring orientation goal:
+  //   - pivot.position = midpoint of ring-finger MCP(13)→PIP(14)
+  //   - pivot.quaternion rotates the model so its Y-axis aligns with the finger direction
+  //     (inner.rotation.x = -π/2 makes the hole along Y, so this is correct)
+  //   - The diamond (on +Y of inner group) therefore points toward the fingertip = away from palm ✓
+
   const onHandResults = useCallback((results) => {
     const c2 = canvas2D.current;
     if (c2) { const ctx = c2.getContext("2d"); ctx.clearRect(0, 0, c2.width, c2.height); }
@@ -410,6 +427,7 @@ export default function ARTryOn() {
 
     const lms    = results.multiHandLandmarks[0];
     const aspect = (wrapRef.current?.clientWidth || 640) / (wrapRef.current?.clientHeight || 480);
+    const type   = jTypeRef.current;
 
     if (showDbgRef.current && c2) {
       const ctx = c2.getContext("2d");
@@ -417,33 +435,44 @@ export default function ARTryOn() {
       drawLandmarks(ctx, lms, { color: "rgba(75,108,247,0.9)", lineWidth: 1, radius: 3 });
     }
 
-    // ring  → ring-finger MCP(13) & PIP(14)
-    // bracelet → wrist(0) & index MCP(5)
-    const isRing = jType === "ring";
-    const baseLm = lms[isRing ? 13 : 0];
-    const tipLm  = lms[isRing ? 14 : 5];
+    // Anchor landmarks
+    // Ring:     MCP of ring finger = 13, PIP = 14  (mid-proximal phalanx)
+    // Bracelet: wrist = 0, pinky MCP = 17  (across wrist width)
+    const isRing    = type === "ring";
+    const isBrace   = type === "bracelet";
+    const baseLm    = lms[isRing ? 13 : 0];
+    const tipLm     = lms[isRing ? 14 : (isBrace ? 17 : 5)];
 
-    const basePos = lmToWorld(baseLm, aspect);
-    const tipPos  = lmToWorld(tipLm,  aspect);
+    const basePos   = lmToWorld(baseLm, aspect);
+    const tipPos    = lmToWorld(tipLm,  aspect);
 
-    // Build rotation so model Y-axis aligns with finger direction
+    // Finger/wrist direction vector
     const dir  = new THREE.Vector3().subVectors(tipPos, basePos).normalize();
+
+    // Build quaternion: rotate model Y-axis → finger direction
+    // (inner.rotation.x = -π/2 means hole is along model-Y, so this maps hole to finger)
     const up   = new THREE.Vector3(0, 1, 0);
     const quat = new THREE.Quaternion().setFromUnitVectors(up, dir);
 
-    // Position = midpoint between the two anchor landmarks
-    const pos = new THREE.Vector3().lerpVectors(basePos, tipPos, 0.5);
+    // For ring: sit on the middle of the proximal phalanx segment
+    const pos  = new THREE.Vector3().lerpVectors(basePos, tipPos, 0.5);
 
-    // Scale from hand span (wrist → middle-finger tip)
-    const wristPos = lmToWorld(lms[0],  aspect);
-    const mfTip    = lmToWorld(lms[12], aspect);
-    const span     = wristPos.distanceTo(mfTip);
-    const scale    = span * (isRing ? 0.22 : 0.45);
+    // Scale: ring should be ~30% of hand span, bracelet ~60%
+    const wrist  = lmToWorld(lms[0],  aspect);
+    const mfTip  = lmToWorld(lms[12], aspect);
+    const span   = wrist.distanceTo(mfTip);
+    const scale  = span * (isRing ? 0.28 : 0.55);
 
     placeJewel(pos, quat, scale);
-  }, [jType, placeJewel]);
+  }, [placeJewel]);
 
-  // ── Face result ───────────────────────────────────────────────────────────
+  // ── Face callback ──────────────────────────────────────────────────────────
+  // Earring orientation goal:
+  //   - pivot.position = just below the ear tragus landmark
+  //   - No rotation needed: gem default (OctahedronGeometry Y-up) faces camera ✓
+  //   - For OBJ earrings: they should already face +Z from the artist, no correction needed
+  //   - Scale: 14% of face width per earring
+
   const onFaceResults = useCallback((results) => {
     const c2 = canvas2D.current;
     if (c2) { const ctx = c2.getContext("2d"); ctx.clearRect(0, 0, c2.width, c2.height); }
@@ -457,28 +486,40 @@ export default function ARTryOn() {
 
     if (showDbgRef.current && c2) {
       const ctx = c2.getContext("2d");
-      [234, 454].forEach((idx) => {
+      [234, 454, 152].forEach((idx) => {
         if (!lms[idx]) return;
         ctx.beginPath();
-        ctx.arc((1 - lms[idx].x) * c2.width, lms[idx].y * c2.height, 6, 0, Math.PI * 2);
+        ctx.arc((1 - lms[idx].x) * c2.width, lms[idx].y * c2.height, 5, 0, Math.PI * 2);
         ctx.fillStyle = "rgba(224,64,251,0.9)"; ctx.fill();
       });
     }
 
-    // FaceMesh: 454 = right ear tragus
+    // FaceMesh landmark 454 = right ear tragus (mirrored → appears on left in video)
+    // 234 = left ear tragus
+    // Use right ear (454) as primary anchor; hang earring BELOW it
     const earLm  = lms[454] || lms[234] || lms[0];
     const pos    = lmToWorld(earLm, aspect);
-    pos.y       -= 0.025;
 
-    // Scale from face width
-    const lEar  = lms[234] ? lmToWorld(lms[234], aspect) : pos.clone();
-    const rEar  = lms[454] ? lmToWorld(lms[454], aspect) : pos.clone();
-    const scale = lEar.distanceTo(rEar) * 0.14;
+    // Face width = distance between ear tragi → used for scale
+    const lEar = lms[234] ? lmToWorld(lms[234], aspect) : pos.clone();
+    const rEar = lms[454] ? lmToWorld(lms[454], aspect) : pos.clone();
+    const faceW = lEar.distanceTo(rEar);
 
-    placeJewel(pos, new THREE.Quaternion(), scale);
+    // Earring hangs BELOW the tragus: offset downward by half the earring size
+    const earringSize = faceW * 0.18;
+    pos.y -= earringSize * 0.6;   // hang below tragus
+
+    // Earring faces camera — identity quaternion is correct (no rotation)
+    placeJewel(pos, new THREE.Quaternion(), earringSize);
   }, [placeJewel]);
 
-  // ── Pose result ───────────────────────────────────────────────────────────
+  // ── Pose callback ──────────────────────────────────────────────────────────
+  // Necklace orientation goal:
+  //   - pivot.position = collar bone centre (between shoulder midpoint and chin)
+  //   - Necklace lies in XY plane by default → faces camera (+Z) ✓
+  //   - Should be roughly horizontal, following neckline
+  //   - Tilt to match shoulder angle for a natural fit
+
   const onPoseResults = useCallback((results) => {
     const c2 = canvas2D.current;
     if (c2) { const ctx = c2.getContext("2d"); ctx.clearRect(0, 0, c2.width, c2.height); }
@@ -498,22 +539,35 @@ export default function ARTryOn() {
       });
     }
 
-    const lSh = lms[11]; const rSh = lms[12]; const nose = lms[0];
+    const lSh  = lms[11]; const rSh = lms[12]; const nose = lms[0];
     if (!lSh || !rSh || !nose) { trackRef.current = false; setTrackingOK(false); return; }
 
     const lPos   = lmToWorld(lSh,  aspect);
     const rPos   = lmToWorld(rSh,  aspect);
     const nPos   = lmToWorld(nose, aspect);
-    const centre = new THREE.Vector3().addVectors(lPos, rPos).multiplyScalar(0.5);
-    const pos    = new THREE.Vector3().lerpVectors(nPos, centre, 0.60);
 
-    const scale  = lPos.distanceTo(rPos) * 0.50;
-    placeJewel(pos, new THREE.Quaternion(), scale);
+    // Collar position = 65% of the way from nose to shoulder midpoint
+    const shoulderMid = new THREE.Vector3().addVectors(lPos, rPos).multiplyScalar(0.5);
+    const collarPos   = new THREE.Vector3().lerpVectors(nPos, shoulderMid, 0.65);
+
+    // Shoulder angle (tilt necklace to follow shoulder line)
+    const shoulderDir   = new THREE.Vector3().subVectors(rPos, lPos).normalize();
+    const shoulderAngle = Math.atan2(shoulderDir.y, shoulderDir.x);
+
+    // Rotate necklace around Z to follow shoulder tilt, keep facing camera (+Z)
+    const quat = new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(0, 0, shoulderAngle)
+    );
+
+    // Scale = 65% of shoulder span (fills the neckline)
+    const shoulderSpan = lPos.distanceTo(rPos);
+    const scale = shoulderSpan * 0.65;
+
+    placeJewel(collarPos, quat, scale);
   }, [placeJewel]);
 
-  // ── Start MediaPipe tracker ───────────────────────────────────────────────
+  // ── Start tracker ──────────────────────────────────────────────────────────
   const startTracker = useCallback(async (type) => {
-    // Tear down existing tracker
     if (mpRef.current?.mpCamera) { try { await mpRef.current.mpCamera.stop(); } catch {} }
     if (mpRef.current?.tracker?.close) { try { await mpRef.current.tracker.close(); } catch {} }
     trackRef.current = false; setTrackingOK(false);
@@ -527,17 +581,17 @@ export default function ARTryOn() {
       let tracker;
 
       if (track === "hands") {
-        tracker = new Hands({ locateFile: (f) => `${CDN("hands","0.4.1646424915")}/${f}` });
+        tracker = new Hands({ locateFile: f => `${CDN("hands","0.4.1646424915")}/${f}` });
         tracker.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.6 });
         tracker.onResults(onHandResults);
 
       } else if (track === "face") {
-        tracker = new FaceMesh({ locateFile: (f) => `${CDN("face_mesh","0.4.1633559619")}/${f}` });
+        tracker = new FaceMesh({ locateFile: f => `${CDN("face_mesh","0.4.1633559619")}/${f}` });
         tracker.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.6, minTrackingConfidence: 0.6 });
         tracker.onResults(onFaceResults);
 
       } else {
-        tracker = new Pose({ locateFile: (f) => `${CDN("pose","0.5.1675469404")}/${f}` });
+        tracker = new Pose({ locateFile: f => `${CDN("pose","0.5.1675469404")}/${f}` });
         tracker.setOptions({ modelComplexity: 1, smoothLandmarks: true, enableSegmentation: false, minDetectionConfidence: 0.6, minTrackingConfidence: 0.6 });
         tracker.onResults(onPoseResults);
       }
@@ -549,10 +603,8 @@ export default function ARTryOn() {
         width: 1280, height: 720,
       });
       await mpCamera.start();
-
       mpRef.current = { tracker, mpCamera };
 
-      // Sync 2D canvas to video size
       video.addEventListener("loadedmetadata", () => {
         if (canvas2D.current) {
           canvas2D.current.width  = video.videoWidth  || 1280;
@@ -567,14 +619,12 @@ export default function ARTryOn() {
     }
   }, [onHandResults, onFaceResults, onPoseResults]);
 
-  // ── Mount ─────────────────────────────────────────────────────────────────
+  // ── Mount ──────────────────────────────────────────────────────────────────
   useEffect(() => {
     const type = detectJewelryType(level2);
-    setJType(type);
+    setJType(type); jTypeRef.current = type;
 
     const cleanupThree = initThree();
-
-    // Small delay to ensure Three.js canvas is ready before we build the scene
     const t = setTimeout(async () => {
       await loadJewelry(type);
       await startTracker(type);
@@ -590,15 +640,15 @@ export default function ARTryOn() {
     };
   }, []); // eslint-disable-line
 
-  // ── Switch jewelry type ───────────────────────────────────────────────────
+  // ── Switch type ────────────────────────────────────────────────────────────
   const switchType = useCallback(async (newType) => {
-    setJType(newType);
+    setJType(newType); jTypeRef.current = newType;
     trackRef.current = false; setTrackingOK(false);
     await loadJewelry(newType);
     await startTracker(newType);
   }, [loadJewelry, startTracker]);
 
-  // ── Capture composite photo ───────────────────────────────────────────────
+  // ── Capture ────────────────────────────────────────────────────────────────
   const capturePhoto = useCallback(() => {
     const video = videoRef.current;
     const c3d   = canvas3D.current;
@@ -618,9 +668,7 @@ export default function ARTryOn() {
     a.click();
   }, [mirrored]);
 
-  // ─────────────────────────────────────────────────────────────────────────
-  //  Render
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── Render ─────────────────────────────────────────────────────────────────
   const ICONS = { ring: "💍", earring: "💎", necklace: "📿", bracelet: "⌚" };
 
   return (
@@ -632,33 +680,30 @@ export default function ARTryOn() {
     }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@700;800&family=DM+Sans:wght@400;500&display=swap');
-        @keyframes pulse     { 0%,100%{opacity:1}    50%{opacity:0.35} }
-        @keyframes fadeDown  { from{opacity:0;transform:translateY(-10px)} to{opacity:1;transform:translateY(0)} }
-        @keyframes fadeUp2   { from{opacity:0;transform:translateY(10px)}  to{opacity:1;transform:translateY(0)} }
-        @keyframes gradShift { 0%{background-position:0% 50%} 50%{background-position:100% 50%} 100%{background-position:0% 50%} }
-        @keyframes spin      { to{transform:rotate(360deg)} }
+        @keyframes pulse    { 0%,100%{opacity:1} 50%{opacity:0.35} }
+        @keyframes fadeDown { from{opacity:0;transform:translateY(-10px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes fadeUp2  { from{opacity:0;transform:translateY(10px)}  to{opacity:1;transform:translateY(0)} }
+        @keyframes gradShift{ 0%{background-position:0% 50%} 50%{background-position:100% 50%} 100%{background-position:0% 50%} }
+        @keyframes spin     { to{transform:rotate(360deg)} }
         .ar-tap { transition:all 0.18s; cursor:pointer; }
         .ar-tap:hover  { opacity:0.85; transform:scale(1.06); }
         .ar-tap:active { transform:scale(0.94); }
       `}</style>
 
-      {/* Video feed */}
+      {/* Video */}
       <video ref={videoRef} autoPlay playsInline muted style={{
         position:"absolute", inset:0, width:"100%", height:"100%",
-        objectFit:"cover",
-        transform: mirrored ? "scaleX(-1)" : "none",
+        objectFit:"cover", transform: mirrored ? "scaleX(-1)" : "none",
       }} />
 
-      {/* 2D debug overlay */}
+      {/* 2D debug canvas */}
       <canvas ref={canvas2D} style={{
         position:"absolute", inset:0, width:"100%", height:"100%",
-        objectFit:"cover",
-        transform: mirrored ? "scaleX(-1)" : "none",
-        pointerEvents:"none",
-        display: showDebug ? "block" : "none",
+        objectFit:"cover", transform: mirrored ? "scaleX(-1)" : "none",
+        pointerEvents:"none", display: showDebug ? "block" : "none",
       }} />
 
-      {/* Three.js overlay */}
+      {/* Three.js canvas */}
       <canvas ref={canvas3D} style={{
         position:"absolute", inset:0, width:"100%", height:"100%",
         pointerEvents:"none",
@@ -679,14 +724,11 @@ export default function ARTryOn() {
           color:"#fff", fontSize:"13px", fontFamily:"'DM Sans',sans-serif",
           display:"flex", alignItems:"center", gap:"5px",
         }}>
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M10 3L5 8l5 5"/>
-          </svg>
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 3L5 8l5 5"/></svg>
           Back
         </button>
 
-        <img src="/assets/logo.png" alt="GeminAI"
-          style={{ height:"26px", objectFit:"contain", opacity:0.92 }} />
+        <img src="/assets/logo.png" alt="GeminAI" style={{ height:"26px", objectFit:"contain", opacity:0.92 }} />
 
         <div style={{ flex:1 }}>
           <div style={{ fontSize:"14px", fontWeight:700, color:"#fff", fontFamily:"'Nunito',sans-serif" }}>
@@ -694,21 +736,17 @@ export default function ARTryOn() {
           </div>
           <div style={{ fontSize:"11px", color:"rgba(255,255,255,0.55)", marginTop:"1px" }}>
             {jType.charAt(0).toUpperCase() + jType.slice(1)} mode
-            {modelLoaded && <span style={{ color: T.success, marginLeft: "8px" }}>● model loaded</span>}
+            {modelLoaded && <span style={{ color: T.success, marginLeft:"8px" }}>● model loaded</span>}
           </div>
         </div>
 
-        {/* FPS */}
         <div style={{
           padding:"4px 10px", borderRadius:"20px",
-          backgroundImage: fps >= 18 ? "none" : "none",
           backgroundColor: fps >= 18 ? "rgba(46,204,113,0.2)" : "rgba(231,76,60,0.2)",
           border:`1px solid ${fps >= 18 ? "rgba(46,204,113,0.4)" : "rgba(231,76,60,0.4)"}`,
-          fontSize:"11px", color: fps >= 18 ? T.success : T.danger,
-          fontFamily:"monospace",
+          fontSize:"11px", color: fps >= 18 ? T.success : T.danger, fontFamily:"monospace",
         }}>{fps} fps</div>
 
-        {/* Tracking */}
         <div style={{
           display:"flex", alignItems:"center", gap:"6px",
           padding:"4px 12px", borderRadius:"20px",
@@ -729,13 +767,12 @@ export default function ARTryOn() {
       {status !== "error" && (
         <div style={{
           position:"absolute", top:"76px", left:"50%", transform:"translateX(-50%)",
-          zIndex:10, whiteSpace:"nowrap",
-          padding:"8px 18px", borderRadius:"20px",
+          zIndex:10, padding:"8px 18px", borderRadius:"20px",
           backgroundColor:"rgba(0,0,0,0.55)", backdropFilter:"blur(10px)",
           border:"1px solid rgba(255,255,255,0.12)",
           fontSize:"12px", color:"rgba(255,255,255,0.85)",
           display:"flex", alignItems:"center", gap:"8px",
-          maxWidth:"90vw", overflow:"hidden", textOverflow:"ellipsis",
+          maxWidth:"90vw", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap",
           animation:"fadeDown 0.3s ease",
         }}>
           {status === "loading" && (
@@ -745,7 +782,7 @@ export default function ARTryOn() {
         </div>
       )}
 
-      {/* ── GUIDE SILHOUETTE ── */}
+      {/* ── PLACEMENT GUIDE ── */}
       {status === "tracking" && !trackingOK && (
         <div style={{
           position:"absolute", inset:0, zIndex:5,
@@ -755,8 +792,8 @@ export default function ARTryOn() {
           <div style={{
             border:"2.5px dashed rgba(123,92,229,0.55)",
             borderRadius: jType === "necklace" ? "50%" : "50% 50% 35% 35% / 60% 60% 40% 40%",
-            width:  jType === "necklace" ? "220px" : jType === "earring" ? "100px" : "130px",
-            height: jType === "necklace" ? "120px" : jType === "earring" ? "100px" : "170px",
+            width:  jType === "necklace" ? "220px" : jType === "earring" ? "90px" : "130px",
+            height: jType === "necklace" ? "110px" : jType === "earring" ? "90px"  : "170px",
             display:"flex", alignItems:"center", justifyContent:"center",
             fontSize:"44px",
             backgroundColor:"rgba(75,108,247,0.05)",
@@ -776,7 +813,6 @@ export default function ARTryOn() {
         justifyContent:"space-between", gap:"12px",
         animation:"fadeUp2 0.4s ease",
       }}>
-
         {/* Type switcher */}
         <div style={{ display:"flex", gap:"8px" }}>
           {Object.entries(ICONS).map(([type, icon]) => (
@@ -803,7 +839,7 @@ export default function ARTryOn() {
           backgroundSize:"200% 200%",
           animation:"gradShift 3s ease infinite",
           border:"4px solid rgba(255,255,255,0.3)",
-          boxShadow:"0 0 28px rgba(75,108,247,0.55), 0 4px 18px rgba(0,0,0,0.5)",
+          boxShadow:"0 0 28px rgba(75,108,247,0.55),0 4px 18px rgba(0,0,0,0.5)",
           fontSize:"26px",
           display:"flex", alignItems:"center", justifyContent:"center",
         }}>📸</button>
@@ -811,8 +847,8 @@ export default function ARTryOn() {
         {/* Toggles */}
         <div style={{ display:"flex", gap:"8px" }}>
           {[
-            { label:"Mirror", icon:"⟺", state:mirrored,   toggle:() => setMirrored(m => !m) },
-            { label:"Debug",  icon:"🔍", state:showDebug,  toggle:() => setShowDebug(d => !d) },
+            { label:"Mirror", icon:"⟺", state:mirrored,  toggle:() => setMirrored(m => !m) },
+            { label:"Debug",  icon:"🔍", state:showDebug, toggle:() => setShowDebug(d => !d) },
           ].map(({ label, icon, state, toggle }) => (
             <button key={label} className="ar-tap" onClick={toggle} style={{
               padding:"10px 14px", borderRadius:"13px",
@@ -848,9 +884,7 @@ export default function ARTryOn() {
             textAlign:"center", maxWidth:"320px", lineHeight:1.65,
             backgroundColor:"rgba(231,76,60,0.1)", border:"1px solid rgba(231,76,60,0.25)",
             borderRadius:"10px", padding:"12px 16px",
-          }}>
-            {statusMsg}
-          </div>
+          }}>{statusMsg}</div>
           <div style={{ display:"flex", gap:"10px" }}>
             <button className="ar-tap" onClick={() => startTracker(jType)} style={{
               padding:"10px 24px", borderRadius:"10px",
