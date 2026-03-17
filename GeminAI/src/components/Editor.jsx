@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import Cookies from "js-cookie";
+import { useNavigate } from "react-router-dom";
 import ModelRenderer from "./ModelRenderer";
 import ControlPanel  from "./ControlPanel";
 
@@ -89,10 +90,9 @@ const S = {
   btnAccent: (saving) => ({
     padding: "5px 16px", borderRadius: "7px", fontSize: "11px", cursor: saving ? "not-allowed" : "pointer",
     fontFamily: "'DM Sans',sans-serif",
-    background: saving
-      ? "rgba(75,108,247,0.4)"
-      : "linear-gradient(135deg,#4B6CF7,#9B59E8)",
-    backgroundSize: "200% 200%",
+    backgroundImage:  saving ? "none"                                  : "linear-gradient(135deg,#4B6CF7,#9B59E8)",
+    backgroundColor:  saving ? "rgba(75,108,247,0.4)"                 : "transparent",
+    backgroundSize:   "200% 200%",
     animation: saving ? "none" : "gradShift 3.5s ease infinite",
     border: "none", color: "#fff", fontWeight: 600, transition: "all 0.2s",
     boxShadow: saving ? "none" : "0 2px 12px rgba(75,108,247,0.35)",
@@ -471,6 +471,7 @@ function ComponentTree({ jewelryJSON, selectedId, onSelect }) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function Editor() {
+  const navigate = useNavigate();
   const [jewelryJSON, setJewelryJSON] = useState(null);
   const [selectedId,  setSelectedId]  = useState(null);
   const [navTab,      setNavTab]      = useState("Designer");
@@ -614,7 +615,19 @@ export default function Editor() {
         ))}
 
         <div style={S.navRight}>
-          {["AR Try‑On", "Capture", "Package"].map((b) => (
+          <button
+            style={{
+              ...S.btnGhost,
+              background: "linear-gradient(135deg,rgba(75,108,247,0.15),rgba(224,64,251,0.1))",
+              border: "1px solid rgba(123,92,229,0.4)",
+              color: "#9d80f0", fontWeight: 500,
+              display: "flex", alignItems: "center", gap: "5px",
+            }}
+            onClick={() => navigate(`/designs/${designId}/ar`)}
+          >
+            <span style={{ fontSize: "13px" }}>◈</span> AR Try‑On
+          </button>
+          {["Capture", "Package"].map((b) => (
             <button key={b} style={S.btnGhost}>{b}</button>
           ))}
 

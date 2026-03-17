@@ -240,7 +240,7 @@ const ModelRenderer = forwardRef(function ModelRenderer(
     renderer.setSize(W, H);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled   = true;
-    renderer.shadowMap.type      = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type      = THREE.PCFShadowMap;
     renderer.toneMapping         = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.2;
     if (renderer.outputColorSpace !== undefined) renderer.outputColorSpace = THREE.SRGBColorSpace;
