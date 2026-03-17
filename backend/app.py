@@ -53,8 +53,7 @@ Rules:
 1. Use render_type = "geometry" for simple metal structures
 2. Use render_type = "model" for complex gemstones
 3. Positions should be normalized values
-4. Rings use torus geometry
-5. For normal rings with prongs render_type = "model" and give it the name as "ring_frame" only.
+4. For normal rings with prongs render_type = "model" and give it the name as "ring_frame" only.
 
 Return ONLY JSON.
 
