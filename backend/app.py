@@ -13,20 +13,24 @@ from flask_cors import CORS
 
 from services.model_service import create_model_pipeline
 
-
+from gem_removal import diamond_bp
 from price import price_bp
 from auth import auth_bp
 from designs import new_design_bp
+from gem_swap_routes import gem_swap_bp
 
 app = Flask(__name__)
 CORS(app)
 app.register_blueprint(auth_bp, url_prefix="/auth")
 app.register_blueprint(new_design_bp)
 app.register_blueprint(price_bp, url_prefix="/api/price")
+app.register_blueprint(gem_swap_bp)
+app.register_blueprint(diamond_bp)
  
 # -------------------------
 # GEMINI CONFIG
 # -------------------------
+
 
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -56,7 +60,7 @@ Rules:
 2. Use render_type = "model" for complex gemstones
 3. Positions should be normalized values
 4. For normal rings with prongs render_type = "model" and give it the name as "ring_frame" only.
-
+5. for gems identify first as diamond,CushionCut_Diamond,Emerald_Diamond,Oval_Diamond,pearl_Sphere,Princess_Dimond and then any other.
 Return ONLY JSON.
 
 Schema:

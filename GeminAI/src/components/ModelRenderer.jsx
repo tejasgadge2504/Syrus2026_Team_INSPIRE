@@ -1,10 +1,10 @@
 import React, { useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from "react";
 import * as THREE from "three";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
+import { OrbitControls }  from "three/examples/jsm/controls/OrbitControls";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment";
-import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader";
-import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter";
-import { STLExporter } from "three/examples/jsm/exporters/STLExporter";
+import { OBJLoader }      from "three/examples/jsm/loaders/OBJLoader";
+import { GLTFExporter }   from "three/examples/jsm/exporters/GLTFExporter";
+import { STLExporter }    from "three/examples/jsm/exporters/STLExporter";
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Helpers
@@ -77,7 +77,7 @@ function hotUpdateMaterial(mesh, comp, viewMode, envMap) {
     (isWire && mat.type !== "MeshBasicMaterial") ||
     (isClay && !(mat.type === "MeshStandardMaterial" && mat.roughness > 0.5)) ||
     (isPbr  && (mat.type === "MeshBasicMaterial" ||
-               (isGem && !mat.transmission) ||
+               (isGem  && !mat.transmission) ||
                (!isGem && mat.roughness > 0.5)));
 
   if (wrongType) {
@@ -97,8 +97,8 @@ function hotUpdateMaterial(mesh, comp, viewMode, envMap) {
 
 function buildGeometry(comp) {
   const g     = comp.geometry || {};
-  const gtype = (g.type || "").toLowerCase().trim();
-  const ctype = (comp.type  || "").toLowerCase().trim();
+  const gtype = (g.type   || "").toLowerCase().trim();
+  const ctype = (comp.type || "").toLowerCase().trim();
 
   if (gtype === "torus")      return new THREE.TorusGeometry(g.radius || 1, g.tube || 0.12, 64, 256);
   if (gtype === "sphere")     return new THREE.SphereGeometry(g.radius || 0.3, 64, 64);
@@ -107,11 +107,11 @@ function buildGeometry(comp) {
   if (gtype === "octahedron") return new THREE.OctahedronGeometry(g.radius || 0.25, 2);
   if (gtype === "cone")       return new THREE.ConeGeometry(g.radius || 0.06, g.height || 0.18, 32);
 
-  if (["band","ring","shank"].includes(ctype))           return new THREE.TorusGeometry(g.radius || 1, g.tube || (g.bandWidth ? g.bandWidth / 20 : 0.12), 64, 256);
-  if (isGemType(ctype))                                  return new THREE.OctahedronGeometry(g.size || g.radius || 0.28, 2);
-  if (["prong","prongs"].includes(ctype))                return new THREE.TorusGeometry(g.radius || 0.38, g.tube || 0.032, 16, 64);
-  if (["setting","basket","bezel"].includes(ctype))      return new THREE.CylinderGeometry(0.35, 0.28, 0.16, 32, 1, true);
-  if (ctype === "halo")                                  return new THREE.TorusGeometry(g.radius || 0.42, g.tube || 0.045, 32, 128);
+  if (["band","ring","shank"].includes(ctype))      return new THREE.TorusGeometry(g.radius || 1, g.tube || (g.bandWidth ? g.bandWidth / 20 : 0.12), 64, 256);
+  if (isGemType(ctype))                             return new THREE.OctahedronGeometry(g.size || g.radius || 0.28, 2);
+  if (["prong","prongs"].includes(ctype))           return new THREE.TorusGeometry(g.radius || 0.38, g.tube || 0.032, 16, 64);
+  if (["setting","basket","bezel"].includes(ctype)) return new THREE.CylinderGeometry(0.35, 0.28, 0.16, 32, 1, true);
+  if (ctype === "halo")                             return new THREE.TorusGeometry(g.radius || 0.42, g.tube || 0.045, 32, 128);
   return new THREE.SphereGeometry(0.15, 32, 32);
 }
 
@@ -128,15 +128,18 @@ function applyTransform(obj, comp) {
 function setupLighting(scene, envMode) {
   const ambient = new THREE.AmbientLight(0xffffff, envMode === "Dramatic" ? 0.1 : 0.3);
   scene.add(ambient);
+
   const key = new THREE.DirectionalLight(0xfff5e0, envMode === "Dramatic" ? 3.0 : 1.8);
   key.position.set(5, 10, 7);
   key.castShadow = true;
   key.shadow.mapSize.set(2048, 2048);
   key.shadow.camera.near = 0.1; key.shadow.camera.far = 50; key.shadow.bias = -0.001;
   scene.add(key);
+
   const fill = new THREE.DirectionalLight(0xddeeff, 0.6); fill.position.set(-6, 4, -4); scene.add(fill);
   const rim  = new THREE.DirectionalLight(0xffcc44, envMode === "Dramatic" ? 2.5 : 1.0); rim.position.set(0, -2, -6); scene.add(rim);
   const top  = new THREE.DirectionalLight(0xffffff, 0.8); top.position.set(0, 15, 0); scene.add(top);
+
   if (envMode === "Showroom") {
     const s1 = new THREE.SpotLight(0xffffff, 3.0); s1.position.set(0,12,0); s1.angle = Math.PI/5; s1.penumbra = 0.25; s1.castShadow = true; scene.add(s1);
     const s2 = new THREE.SpotLight(0xffeedd, 1.5); s2.position.set(8,5,2);  s2.angle = Math.PI/4; s2.penumbra = 0.5;  scene.add(s2);
@@ -145,6 +148,23 @@ function setupLighting(scene, envMode) {
     const s1 = new THREE.SpotLight(0xc9a84c, 5.0); s1.position.set(-2,8,2); s1.angle = Math.PI/10; s1.penumbra = 0.4; s1.castShadow = true; scene.add(s1);
     const s2 = new THREE.SpotLight(0xffffff, 2.0); s2.position.set(4,6,-3); s2.angle = Math.PI/8;  s2.penumbra = 0.6; scene.add(s2);
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  URL normaliser
+//  model_path can be either:
+//    • a full URL  → "http://localhost:5000/api/gems/model/CushionCut_Diamond"
+//    • a rel path  → "database/models/diamond.obj"
+//  We always want a full URL for OBJLoader.
+// ─────────────────────────────────────────────────────────────────────────────
+function resolveModelUrl(modelPath) {
+  if (!modelPath) return null;
+  // Already a full URL — use as-is
+  if (modelPath.startsWith("http://") || modelPath.startsWith("https://")) {
+    return modelPath;
+  }
+  // Relative path — prepend Flask base
+  return `http://localhost:5000/${modelPath}`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -164,61 +184,59 @@ const ModelRenderer = forwardRef(function ModelRenderer(
   const envMapRef   = useRef(null);
   const objectMap   = useRef({});
 
-  // ── Expose export methods to parent via ref ──────────────────────────────
+  // ── fitCamera — defined FIRST so it can be called anywhere below ──────────
+  const fitCamera = useCallback(() => {
+    const scene  = sceneRef.current;
+    const camera = cameraRef.current;
+    const ctrl   = controlsRef.current;
+    if (!scene || !camera) return;
+
+    const box = new THREE.Box3();
+    scene.traverse((child) => { if (child.isMesh) box.expandByObject(child); });
+    if (box.isEmpty()) return;
+
+    const size   = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z);
+    camera.position.set(center.x, center.y + maxDim * 0.6, center.z + maxDim * 1.8);
+    camera.lookAt(center);
+    if (ctrl) ctrl.target.copy(center);
+  }, []);
+
+  // ── Expose export methods ─────────────────────────────────────────────────
   useImperativeHandle(ref, () => ({
-    // ── PNG screenshot at high resolution ──────────────────────────────────
     captureImage(multiplier = 3) {
       const renderer = rendererRef.current;
       const scene    = sceneRef.current;
       const camera   = cameraRef.current;
       if (!renderer || !scene || !camera) return null;
-
-      // Save current size
       const origW = renderer.domElement.width;
       const origH = renderer.domElement.height;
-
-      // Render at higher resolution
       renderer.setSize(origW * multiplier, origH * multiplier, false);
       renderer.render(scene, camera);
       const dataURL = renderer.domElement.toDataURL("image/png");
-
-      // Restore
       renderer.setSize(origW, origH, false);
       renderer.render(scene, camera);
-
       return dataURL;
     },
-
-    // ── GLB export (binary GLTF) ───────────────────────────────────────────
     exportGLB() {
       return new Promise((resolve, reject) => {
         const scene = sceneRef.current;
         if (!scene) return reject(new Error("Scene not ready"));
-
         const exporter = new GLTFExporter();
         exporter.parse(
           scene,
-          (result) => {
-            // result is ArrayBuffer for binary
-            const blob = new Blob([result], { type: "model/gltf-binary" });
-            resolve(blob);
-          },
-          (err) => reject(err),
+          (result) => resolve(new Blob([result], { type: "model/gltf-binary" })),
+          (err)    => reject(err),
           { binary: true, includeCustomExtensions: false }
         );
       });
     },
-
-    // ── STL export ────────────────────────────────────────────────────────
     exportSTL() {
       const scene = sceneRef.current;
       if (!scene) throw new Error("Scene not ready");
-
-      const exporter = new STLExporter();
-      // exportScene returns a string (ASCII STL)
-      const result = exporter.parse(scene, { binary: false });
-      const blob   = new Blob([result], { type: "model/stl" });
-      return blob;
+      const result = new STLExporter().parse(scene, { binary: false });
+      return new Blob([result], { type: "model/stl" });
     },
   }), []);
 
@@ -255,8 +273,8 @@ const ModelRenderer = forwardRef(function ModelRenderer(
     const pmrem      = new THREE.PMREMGenerator(renderer);
     pmrem.compileEquirectangularShader();
     const envTexture = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    envMapRef.current = envTexture;
-    scene.environment = envTexture;
+    envMapRef.current  = envTexture;
+    scene.environment  = envTexture;
     pmrem.dispose();
 
     const camera = new THREE.PerspectiveCamera(45, W / H, 0.01, 1000);
@@ -264,18 +282,22 @@ const ModelRenderer = forwardRef(function ModelRenderer(
     cameraRef.current = camera;
 
     const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true; controls.dampingFactor = 0.07;
-    controls.enableZoom = true; controls.zoomSpeed = 0.5;
-    controls.minDistance = 0.3; controls.maxDistance = 30;
-    controls.autoRotate = true; controls.autoRotateSpeed = 0.5;
+    controls.enableDamping  = true; controls.dampingFactor  = 0.07;
+    controls.enableZoom     = true; controls.zoomSpeed      = 0.5;
+    controls.minDistance    = 0.3;  controls.maxDistance    = 30;
+    controls.autoRotate     = true; controls.autoRotateSpeed = 0.5;
     controlsRef.current = controls;
 
     setupLighting(scene, envMode);
 
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), new THREE.ShadowMaterial({ opacity: 0.1 }));
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(100, 100),
+      new THREE.ShadowMaterial({ opacity: 0.1 })
+    );
     ground.rotation.x = -Math.PI / 2; ground.position.y = -2; ground.receiveShadow = true;
     scene.add(ground);
 
+    // Click-to-select
     const raycaster = new THREE.Raycaster();
     const mouse     = new THREE.Vector2();
     const onCanvasClick = (e) => {
@@ -320,15 +342,16 @@ const ModelRenderer = forwardRef(function ModelRenderer(
     };
   }, [envMode]); // eslint-disable-line
 
-  // ─── SYNC OBJECTS ────────────────────────────────────────────────────────
+  // ─── SYNC OBJECTS ─────────────────────────────────────────────────────────
   useEffect(() => {
     const scene  = sceneRef.current;
     const envMap = envMapRef.current;
     if (!scene) return;
 
-    const components = jewelryJSON?.components || [];
+    const components  = jewelryJSON?.components || [];
     const incomingIds = new Set(components.map((c) => c.id));
 
+    // Remove deleted components
     Object.keys(objectMap.current).forEach((id) => {
       if (!incomingIds.has(id)) {
         scene.remove(objectMap.current[id].group);
@@ -338,25 +361,59 @@ const ModelRenderer = forwardRef(function ModelRenderer(
     });
 
     const objLoader = new OBJLoader();
+
     components.forEach((comp) => {
       const existing = objectMap.current[comp.id];
 
       if (comp.model_path) {
-        if (!existing) {
-          const url = `http://localhost:5000/${comp.model_path}`;
-          objLoader.load(url, (obj) => {
-            const ms = getMeshes(obj);
-            ms.forEach((m) => { m.material = buildMaterial(comp, viewMode, envMap); m.userData.componentId = comp.id; m.castShadow = m.receiveShadow = true; });
-            applyTransform(obj, comp);
-            scene.add(obj);
-            objectMap.current[comp.id] = { group: obj, meshes: ms };
-            fitCamera();
-          }, undefined, (err) => console.warn("OBJ load failed:", err));
-        } else {
+        // ── OBJ model path set (either full URL or relative) ───────────────
+        // FIX: resolve to a proper full URL — never double-prefix
+        const resolvedUrl = resolveModelUrl(comp.model_path);
+        const pathChanged = existing && existing.loadedPath !== resolvedUrl;
+
+        if (!existing || pathChanged) {
+          // Tear down old mesh first
+          if (existing) {
+            scene.remove(existing.group);
+            existing.meshes.forEach((m) => { m.geometry?.dispose(); m.material?.dispose(); });
+            delete objectMap.current[comp.id];
+          }
+
+          // Store a placeholder so rapid re-renders don't kick off duplicate loads
+          objectMap.current[comp.id] = { group: null, meshes: [], loadedPath: resolvedUrl };
+
+          objLoader.load(
+            resolvedUrl,
+            (obj) => {
+              // Guard: component may have been removed while we were loading
+              if (!objectMap.current[comp.id]) return;
+
+              const ms = getMeshes(obj);
+              ms.forEach((m) => {
+                m.material = buildMaterial(comp, viewMode, envMap);
+                m.userData.componentId = comp.id;
+                m.castShadow = m.receiveShadow = true;
+              });
+              applyTransform(obj, comp);
+              scene.add(obj);
+              objectMap.current[comp.id] = { group: obj, meshes: ms, loadedPath: resolvedUrl };
+              fitCamera();
+            },
+            undefined,
+            (err) => {
+              console.warn("OBJ load failed:", resolvedUrl, err);
+              // Remove placeholder on failure so next render retries
+              delete objectMap.current[comp.id];
+            }
+          );
+        } else if (existing.group) {
+          // Model already loaded — just update material / transform
           existing.meshes.forEach((m) => hotUpdateMaterial(m, comp, viewMode, envMap));
           applyTransform(existing.group, comp);
         }
+
       } else {
+        // ── Procedural geometry (no model_path) ───────────────────────────
         if (!existing) {
           const mesh = new THREE.Mesh(buildGeometry(comp), buildMaterial(comp, viewMode, envMap));
           mesh.userData.componentId = comp.id;
@@ -370,6 +427,8 @@ const ModelRenderer = forwardRef(function ModelRenderer(
         } else {
           existing.meshes.forEach((m) => hotUpdateMaterial(m, comp, viewMode, envMap));
           applyTransform(existing.group, comp);
+
+          // Rebuild band geometry if width changed
           const ctype = (comp.type || "").toLowerCase();
           if (["band","ring","shank"].includes(ctype) && existing.meshes[0]) {
             const oldMesh = existing.meshes[0];
@@ -383,7 +442,7 @@ const ModelRenderer = forwardRef(function ModelRenderer(
         }
       }
     });
-  }, [jewelryJSON, viewMode]); // eslint-disable-line
+  }, [jewelryJSON, viewMode, fitCamera]); // fitCamera is stable (useCallback + no deps)
 
   // ─── SELECTION highlight ──────────────────────────────────────────────────
   useEffect(() => {
@@ -401,25 +460,11 @@ const ModelRenderer = forwardRef(function ModelRenderer(
     if (controlsRef.current) controlsRef.current.autoRotate = !selectedId;
   }, [selectedId]);
 
-  // ─── Camera fit ───────────────────────────────────────────────────────────
-  const fitCamera = useCallback(() => {
-    const scene  = sceneRef.current;
-    const camera = cameraRef.current;
-    const ctrl   = controlsRef.current;
-    if (!scene || !camera) return;
-    const box = new THREE.Box3();
-    scene.traverse((child) => { if (child.isMesh) box.expandByObject(child); });
-    if (box.isEmpty()) return;
-    const size   = box.getSize(new THREE.Vector3());
-    const center = box.getCenter(new THREE.Vector3());
-    const maxDim = Math.max(size.x, size.y, size.z);
-    camera.position.set(center.x, center.y + maxDim * 0.6, center.z + maxDim * 1.8);
-    camera.lookAt(center);
-    if (ctrl) ctrl.target.copy(center);
-  }, []);
-
   return (
-    <div ref={mountRef} style={{ flex: 1, position: "relative", overflow: "hidden", background: "#0d0d10" }} />
+    <div
+      ref={mountRef}
+      style={{ flex: 1, position: "relative", overflow: "hidden", background: "#0d0d10" }}
+    />
   );
 });
 
